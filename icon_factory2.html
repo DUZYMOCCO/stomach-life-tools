@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>アイコン工場 - ストマックライフ</title>
+<style>
+  :root{
+    --bg:#14181d; --panel:#1e242b; --panel2:#262e37; --line:#39434e;
+    --text:#e8edf2; --dim:#8b98a5; --accent:#39d3e6; --ok:#5ade8a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+    padding-bottom:40px;}
+  header{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel);
+    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;}
+  header h1{font-size:14px;font-weight:700;color:var(--accent);letter-spacing:.05em;}
+  #prog{margin-left:auto;font-size:13px;color:var(--dim);font-weight:600;}
+  #prog b{color:var(--ok);font-size:16px;}
+
+  section{padding:12px 14px;}
+  h2{font-size:12px;color:var(--dim);font-weight:700;letter-spacing:.08em;margin-bottom:8px;}
+
+  .chips{display:flex;flex-wrap:wrap;gap:7px;}
+  .chips button{border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    font-size:13px;font-weight:600;padding:9px 13px;border-radius:20px;font-family:inherit;
+    -webkit-user-select:none;user-select:none;position:relative;}
+  .chips button.on{background:var(--accent);border-color:var(--accent);color:#04252b;}
+  .chips button.done::after{content:"✓";position:absolute;top:-5px;right:-3px;
+    background:var(--ok);color:#04250f;font-size:10px;width:16px;height:16px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-weight:800;}
+
+  #fileNameBar{display:flex;align-items:center;gap:10px;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 14px;}
+  #fileName{font-size:15px;font-weight:700;color:var(--accent);word-break:break-all;}
+  #doneBadge{margin-left:auto;font-size:12px;font-weight:700;color:var(--ok);display:none;white-space:nowrap;}
+
+  #promptBox{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+    color:var(--text);font-size:12.5px;line-height:1.6;padding:12px;min-height:150px;
+    font-family:ui-monospace,Menlo,monospace;resize:none;}
+  .btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    font-size:14px;padding:12px;border-radius:12px;font-weight:700;font-family:inherit;width:100%;
+    -webkit-user-select:none;user-select:none;}
+  .btn:active{background:var(--line);}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#04252b;}
+  .btn.small{padding:9px;font-size:12.5px;}
+  .mt{margin-top:10px;}
+  .row2{display:flex;gap:8px;}
+  .row2 .btn{width:auto;flex:1;}
+
+  #previewRow{display:none;gap:14px;align-items:flex-end;margin-top:12px;}
+  .pv{text-align:center;}
+  .pv img,.pv canvas{background:repeating-conic-gradient(#2c343d 0% 25%, #222932 0% 50%) 0 0/12px 12px;
+    border-radius:8px;display:block;}
+  .pv span{display:block;font-size:10px;color:var(--dim);margin-top:4px;}
+
+  table{border-collapse:collapse;width:100%;}
+  th,td{border:1px solid var(--line);text-align:center;font-size:11px;padding:0;}
+  th{color:var(--dim);font-weight:600;padding:6px 2px;background:var(--panel);}
+  td button{width:100%;height:38px;border:none;background:transparent;color:var(--dim);
+    font-size:15px;font-family:inherit;}
+  td button.done{background:rgba(90,222,138,.16);color:var(--ok);font-weight:800;}
+
+  #toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:var(--accent);
+    color:#04252b;font-size:13px;font-weight:700;padding:10px 16px;border-radius:20px;opacity:0;
+    transition:opacity .25s;pointer-events:none;z-index:20;white-space:nowrap;}
+  .note{font-size:11.5px;color:var(--dim);line-height:1.7;margin-top:8px;}
+
+  #cropStage,#matteStage{display:none;margin-top:12px;}
+  #cropWrap{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    background:repeating-conic-gradient(#2c343d 0% 25%, #222932 0% 50%) 0 0/14px 14px;}
+  #cropCanvas{display:block;width:100%;touch-action:none;}
+  #matteWrap{border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    background:repeating-conic-gradient(#2c343d 0% 25%, #222932 0% 50%) 0 0/14px 14px;
+    display:flex;justify-content:center;}
+  #matteCanvas{display:block;max-width:100%;}
+  .slrow{display:flex;align-items:center;gap:10px;margin-top:10px;}
+  .slrow label{font-size:12px;color:var(--text);font-weight:600;flex-shrink:0;}
+  .slrow input[type=range]{flex:1;accent-color:var(--accent);height:30px;}
+  .slrow span{font-size:12px;color:var(--dim);width:34px;text-align:right;flex-shrink:0;}
+  .togglerow{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--text);font-weight:600;}
+  .togglerow input{width:18px;height:18px;accent-color:var(--accent);}
+  #quadGrid{display:none;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
+  #quadGrid canvas{width:100%;border:2px solid var(--line);border-radius:8px;display:block;
+    background:repeating-conic-gradient(#2c343d 0% 25%, #222932 0% 50%) 0 0/12px 12px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>アイコン工場</h1>
+  <div id="prog"><b>0</b> / 180</div>
+</header>
+
+<section>
+  <h2>1. 型式を選ぶ</h2>
+  <div class="chips" id="typeChips"></div>
+</section>
+
+<section>
+  <h2>2. 素材を選ぶ</h2>
+  <div class="chips" id="matChips"></div>
+</section>
+
+<section>
+  <h2>3. パターン(見た目バリエーション、A〜D)</h2>
+  <div class="chips" id="varChips"></div>
+  <p class="note">同じ型式×素材でも見た目違いを4パターンまで保存できます。ゲーム内でランダム表示する想定。</p>
+</section>
+
+<div id="fileNameBar">
+  <div id="fileName">weapon_pistol_stone.png</div>
+  <div id="doneBadge">✓ 作成済み</div>
+</div>
+
+<section>
+  <h2>4. プロンプトをコピーしてGeminiへ</h2>
+  <textarea id="promptBox" readonly></textarea>
+  <div class="togglerow">
+    <input type="checkbox" id="oneShotToggle">
+    <label for="oneShotToggle">1枚だけ出力させる(切り出し工程スキップ・ガチャ運用)</label>
+  </div>
+  <button class="btn primary mt" id="copyBtn">プロンプトをコピー</button>
+  <p class="note">チェック: グリップは革か木か / シルエットで型式がわかるか / タッチは剣4枚基準か</p>
+</section>
+
+<section>
+  <h2>5. できた画像を読み込んで切り出す</h2>
+  <button class="btn" id="loadBtn">生成画像を読み込む</button>
+  <input type="file" id="fileInput" accept="image/*" hidden>
+
+  <div id="cropStage">
+    <p class="note">1個だけ囲んでください(4枚並びならその1個だけ)。単体画像ならそのまま「全体を使う」でOK。</p>
+    <div id="cropWrap"><canvas id="cropCanvas"></canvas></div>
+    <div class="row2 mt">
+      <button class="btn small" id="useWholeBtn">全体を使う</button>
+      <button class="btn small" id="quadBtn">4分割から選ぶ</button>
+    </div>
+    <div id="quadGrid"></div>
+    <button class="btn small primary mt" id="cropConfirmBtn">選択範囲を切り出す</button>
+  </div>
+
+  <div id="matteStage">
+    <div id="matteWrap"><canvas id="matteCanvas"></canvas></div>
+    <div class="togglerow">
+      <input type="checkbox" id="matteToggle" checked>
+      <label for="matteToggle">背景を自動透過(グレー背景を検出して抜く)</label>
+    </div>
+    <div class="slrow">
+      <label>強さ</label>
+      <input type="range" id="matteThresh" min="10" max="90" value="40">
+      <span id="matteThreshVal">40</span>
+    </div>
+    <p class="note">縁がガタガタ/削れすぎる時はスライダーで調整。おかしければ「やり直す」で選択に戻れます。</p>
+    <div class="row2 mt">
+      <button class="btn small" id="matteRedoBtn">やり直す</button>
+      <button class="btn small primary" id="matteConfirmBtn">この内容で確定</button>
+    </div>
+  </div>
+
+  <div id="previewRow">
+    <div class="pv"><canvas id="pvBig" width="96" height="96"></canvas><span>原寸</span></div>
+    <div class="pv"><canvas id="pvSmall" width="32" height="32"></canvas><span>縮小</span></div>
+    <div class="pv"><canvas id="pvSil" width="32" height="32"></canvas><span>シルエット</span></div>
+  </div>
+  <button class="btn primary mt" id="saveBtn" style="display:none">この名前で保存して✓を付ける</button>
+  <button class="btn mt" id="continueBtn" style="display:none">同じ画像から次を切り出す(グリッド画像用)</button>
+  <p class="note">縮小・シルエットで型式が判別できなければ作り直し推奨。保存はファイルAppのダウンロードに入ります。</p>
+</section>
+
+<section>
+  <h2>進捗表(タップで手動✓も可)</h2>
+  <table id="matrix"></table>
+  <button class="btn mt" id="resetBtn">進捗をリセット</button>
+</section>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const TYPES = [
+  ["pistol","拳銃","a compact pistol"],
+  ["shotgun","ショットガン","a pump-action shotgun with a wide barrel"],
+  ["launcher","ランチャー","a rocket launcher with a large muzzle"],
+  ["beam","ビーム","a sci-fi beam rifle with a glowing energy core"],
+  ["throwing","投擲","a hand grenade"]
+];
+const MATS = [
+  ["stone","石","The main body is made of rough, chipped gray stone with a primitive hand-carved look. The grip is wrapped in simple leather cord."],
+  ["paper","紙","The main body is made of layered, folded paper with visible creases, looking fragile and slightly comical. The grip is plain wood."],
+  ["wood","木","The main body is carved from wood with visible wood grain. The grip is wrapped in leather."],
+  ["leather","革","The main body is reinforced with stitched brown leather panels over a wooden core. The grip is dark leather."],
+  ["copper","銅","The main body is made of polished copper with a warm orange-brown metallic sheen. The grip is dark wood."],
+  ["iron","鉄","The main body is made of forged iron with a dull gray metallic finish. The grip is wrapped in worn leather."],
+  ["titanium","チタン","The main body is made of sleek brushed titanium with a cool silver-blue tint and a high-tech look. The grip is black composite material."],
+  ["tungsten","タングステン","The main body is made of dense dark tungsten with a gunmetal sheen and subtle sci-fi paneling. The grip is black composite material."],
+  ["diamond","ダイヤ",null]
+];
+const VARIANTS = ["a","b","c","d"];
+let curType = "pistol", curMat = "stone", curVariant = "a";
+const LS_KEY = "sl_icon_progress_v1";
+let progress = {};
+try{ progress = JSON.parse(localStorage.getItem(LS_KEY)) || {}; }catch(e){ progress = {}; }
+
+function key(){ return curType + "_" + curMat + "_" + curVariant; }
+function fname(){ return "weapon_" + curType + "_" + curMat + "_" + curVariant + ".png"; }
+function comboDoneCount(t, m){ return VARIANTS.filter(v => progress[t+"_"+m+"_"+v]).length; }
+function nextUnfilledVariant(t, m){
+  const found = VARIANTS.find(v => !progress[t+"_"+m+"_"+v]);
+  return found || "a";
+}
+
+function promptTail(){
+  return document.getElementById("oneShotToggle").checked
+    ? "Output ONLY ONE single, large, highly detailed image."
+    : "Generate 4 variations.";
+}
+function buildPrompt(){
+  const t = TYPES.find(x=>x[0]===curType);
+  if(curMat === "diamond"){
+    return "A single game item icon of " + t[2] + " whose main body is sculpted from\n" +
+      "translucent faceted diamond crystal, with sharp geometric facets,\n" +
+      "internal light refraction, prismatic sparkle highlights,\n" +
+      "and a grip made of dark leather.\n" +
+      "2D game art style, clean bold outlines, anime-style cel shading,\n" +
+      "the object centered and fully visible,\n" +
+      "plain solid light-gray background, no text, no watermark.\n" +
+      promptTail();
+  }
+  const m = MATS.find(x=>x[0]===curMat);
+  return "A single game item icon of " + t[2] + ",\n" +
+    "2D game art style, clean bold outlines, anime-style cel shading,\n" +
+    "the object centered and fully visible,\n" +
+    "plain solid light-gray background (for easy background removal),\n" +
+    "no text, no watermark, no hands, no character.\n" +
+    m[2] + "\n" +
+    promptTail();
+}
+
+function renderChips(){
+  const tc = document.getElementById("typeChips");
+  tc.innerHTML = "";
+  TYPES.forEach(([id,jp])=>{
+    const b = document.createElement("button");
+    b.textContent = jp;
+    b.className = (id===curType ? "on " : "") + (isTypeDone(id) ? "done" : "");
+    b.onclick = ()=>{ curType = id; curVariant = nextUnfilledVariant(curType, curMat); refresh(); };
+    tc.appendChild(b);
+  });
+  const mc = document.getElementById("matChips");
+  mc.innerHTML = "";
+  MATS.forEach(([id,jp])=>{
+    const b = document.createElement("button");
+    b.textContent = jp;
+    b.className = (id===curMat ? "on " : "") + (comboDoneCount(curType,id)===4 ? "done" : "");
+    b.onclick = ()=>{ curMat = id; curVariant = nextUnfilledVariant(curType, curMat); refresh(); };
+    mc.appendChild(b);
+  });
+  const vc = document.getElementById("varChips");
+  vc.innerHTML = "";
+  VARIANTS.forEach((v)=>{
+    const b = document.createElement("button");
+    b.textContent = v.toUpperCase();
+    b.className = (v===curVariant ? "on " : "") + (progress[curType+"_"+curMat+"_"+v] ? "done" : "");
+    b.onclick = ()=>{ curVariant = v; refresh(); };
+    vc.appendChild(b);
+  });
+}
+function isTypeDone(t){ return MATS.every(([m])=> comboDoneCount(t,m)===4); }
+
+function renderMatrix(){
+  const tbl = document.getElementById("matrix");
+  let html = "<tr><th></th>" + TYPES.map(t=>"<th>"+t[1]+"</th>").join("") + "</tr>";
+  MATS.forEach(([mid,mjp])=>{
+    html += "<tr><th>"+mjp+"</th>";
+    TYPES.forEach(([tid])=>{
+      const n = comboDoneCount(tid,mid);
+      html += '<td><button data-t="'+tid+'" data-m="'+mid+'" class="'+(n===4?"done":"")+'">'+n+"/4</button></td>";
+    });
+    html += "</tr>";
+  });
+  tbl.innerHTML = html;
+  tbl.querySelectorAll("td button").forEach(b=>{
+    b.onclick = ()=>{
+      curType = b.dataset.t; curMat = b.dataset.m;
+      curVariant = nextUnfilledVariant(curType, curMat);
+      refresh();
+      toast(curType + " × " + curMat + " を選択");
+    };
+  });
+  const n = Object.keys(progress).length;
+  document.getElementById("prog").innerHTML = "<b>"+n+"</b> / 180";
+}
+function saveProgress(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(progress)); }catch(e){} }
+
+function refresh(){
+  document.getElementById("fileName").textContent = fname();
+  document.getElementById("doneBadge").style.display = progress[key()] ? "block" : "none";
+  document.getElementById("promptBox").value = buildPrompt();
+  renderChips(); renderMatrix();
+}
+
+document.getElementById("copyBtn").onclick = async ()=>{
+  const txt = document.getElementById("promptBox").value;
+  try{
+    await navigator.clipboard.writeText(txt);
+    toast("コピーしました → Geminiへ");
+  }catch(e){
+    const box = document.getElementById("promptBox");
+    box.removeAttribute("readonly"); box.select();
+    document.execCommand("copy");
+    box.setAttribute("readonly",""); window.getSelection().removeAllRanges();
+    toast("コピーしました → Geminiへ");
+  }
+};
+
+let rawImg = null;
+let cropCanvas = null;
+let finalCanvas = null;
+
+document.getElementById("loadBtn").onclick = ()=> document.getElementById("fileInput").click();
+document.getElementById("fileInput").onchange = (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  const url = URL.createObjectURL(f);
+  const im = new Image();
+  im.onload = ()=>{
+    rawImg = im;
+    URL.revokeObjectURL(url);
+    openCropStage();
+  };
+  im.src = url;
+  e.target.value = "";
+};
+
+let cropDisp = {scale:1, cw:0, ch:0};
+let selRect = null;
+let dragStart = null;
+
+function openCropStage(){
+  document.getElementById("previewRow").style.display = "none";
+  document.getElementById("saveBtn").style.display = "none";
+  document.getElementById("continueBtn").style.display = "none";
+  document.getElementById("matteStage").style.display = "none";
+  document.getElementById("quadGrid").style.display = "none";
+  const stage = document.getElementById("cropStage");
+  stage.style.display = "block";
+  const wrap = document.getElementById("cropWrap");
+  const cv = document.getElementById("cropCanvas");
+  const cssW = wrap.clientWidth || 320;
+  const cssH = Math.min(360, cssW * (rawImg.height/rawImg.width));
+  cropDisp.scale = cssW / rawImg.width;
+  cropDisp.cw = cssW; cropDisp.ch = cssH;
+  const dpr = window.devicePixelRatio || 1;
+  cv.style.width = cssW+"px"; cv.style.height = cssH+"px";
+  cv.width = cssW*dpr; cv.height = cssH*dpr;
+  selRect = null;
+  drawCrop();
+}
+function drawCrop(){
+  const cv = document.getElementById("cropCanvas");
+  const dpr = window.devicePixelRatio || 1;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cropDisp.cw,cropDisp.ch);
+  ctx.drawImage(rawImg, 0, 0, cropDisp.cw, cropDisp.ch);
+  if(selRect){
+    ctx.strokeStyle = "#39d3e6"; ctx.lineWidth = 2;
+    ctx.fillStyle = "rgba(57,211,230,0.15)";
+    ctx.fillRect(selRect.x, selRect.y, selRect.w, selRect.h);
+    ctx.strokeRect(selRect.x, selRect.y, selRect.w, selRect.h);
+  }
+}
+(function initCropPointer(){
+  const cv = document.getElementById("cropCanvas");
+  cv.addEventListener("pointerdown",(e)=>{
+    cv.setPointerCapture(e.pointerId);
+    dragStart = {x:e.offsetX, y:e.offsetY};
+    selRect = {x:e.offsetX, y:e.offsetY, w:0, h:0};
+  });
+  cv.addEventListener("pointermove",(e)=>{
+    if(!dragStart) return;
+    const x = Math.min(dragStart.x, e.offsetX), y = Math.min(dragStart.y, e.offsetY);
+    const w = Math.abs(e.offsetX - dragStart.x), h = Math.abs(e.offsetY - dragStart.y);
+    selRect = {x,y,w,h};
+    drawCrop();
+  });
+  function endDrag(){ dragStart = null; }
+  cv.addEventListener("pointerup", endDrag);
+  cv.addEventListener("pointercancel", endDrag);
+})();
+
+document.getElementById("useWholeBtn").onclick = ()=>{
+  cropToCanvas(0, 0, rawImg.width, rawImg.height);
+};
+document.getElementById("quadBtn").onclick = ()=>{
+  const g = document.getElementById("quadGrid");
+  g.innerHTML = "";
+  g.style.display = "grid";
+  const hw = rawImg.width/2, hh = rawImg.height/2;
+  [[0,0],[hw,0],[0,hh],[hw,hh]].forEach(([sx,sy])=>{
+    const c = document.createElement("canvas");
+    c.width = 160; c.height = Math.round(160*hh/hw);
+    c.getContext("2d").drawImage(rawImg, sx, sy, hw, hh, 0, 0, c.width, c.height);
+    c.onclick = ()=>{ g.style.display = "none"; cropToCanvas(sx, sy, hw, hh); };
+    g.appendChild(c);
+  });
+  toast("良いのを1つタップ");
+};
+document.getElementById("oneShotToggle").onchange = refresh;
+document.getElementById("cropConfirmBtn").onclick = ()=>{
+  if(!selRect || selRect.w < 6 || selRect.h < 6){ toast("範囲をドラッグして選択してください"); return; }
+  const ix = selRect.x / cropDisp.scale, iy = selRect.y / cropDisp.scale;
+  const iw = selRect.w / cropDisp.scale, ih = selRect.h / cropDisp.scale;
+  cropToCanvas(ix, iy, iw, ih);
+};
+function cropToCanvas(sx, sy, sw, sh){
+  sx = Math.max(0, sx); sy = Math.max(0, sy);
+  sw = Math.min(sw, rawImg.width - sx); sh = Math.min(sh, rawImg.height - sy);
+  const c = document.createElement("canvas");
+  c.width = Math.round(sw); c.height = Math.round(sh);
+  c.getContext("2d").drawImage(rawImg, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  cropCanvas = c;
+  document.getElementById("cropStage").style.display = "none";
+  openMatteStage();
+}
+
+function sampleCorner(data, w, h, cx, cy, size){
+  let r=0,g=0,b=0,n=0;
+  for(let y=cy; y<cy+size; y++){
+    for(let x=cx; x<cx+size; x++){
+      if(x<0||y<0||x>=w||y>=h) continue;
+      const i = (y*w+x)*4;
+      r += data[i]; g += data[i+1]; b += data[i+2]; n++;
+    }
+  }
+  return n ? {r:r/n, g:g/n, b:b/n} : {r:200,g:200,b:200};
+}
+function openMatteStage(){
+  document.getElementById("matteStage").style.display = "block";
+  const w = cropCanvas.width, h = cropCanvas.height;
+  const mcv = document.getElementById("matteCanvas");
+  mcv.width = w; mcv.height = h;
+  mcv.style.width = (w*Math.min(1,240/w))+"px";
+  renderMatte();
+}
+function renderMatte(){
+  const w = cropCanvas.width, h = cropCanvas.height;
+  const srcCtx = cropCanvas.getContext("2d");
+  const srcData = srcCtx.getImageData(0,0,w,h);
+  const on = document.getElementById("matteToggle").checked;
+  const thresh = parseInt(document.getElementById("matteThresh").value,10);
+  document.getElementById("matteThreshVal").textContent = thresh;
+
+  const out = new ImageData(new Uint8ClampedArray(srcData.data), w, h);
+  if(on){
+    const size = Math.max(2, Math.floor(Math.min(w,h)*0.04));
+    const corners = [
+      sampleCorner(srcData.data, w, h, 0, 0, size),
+      sampleCorner(srcData.data, w, h, w-size, 0, size),
+      sampleCorner(srcData.data, w, h, 0, h-size, size),
+      sampleCorner(srcData.data, w, h, w-size, h-size, size)
+    ];
+    const bg = {
+      r: corners.reduce((s,c)=>s+c.r,0)/4,
+      g: corners.reduce((s,c)=>s+c.g,0)/4,
+      b: corners.reduce((s,c)=>s+c.b,0)/4
+    };
+    const t0 = thresh * 1.8;
+    const t1 = t0 + 22;
+    const d = out.data;
+    for(let i=0; i<d.length; i+=4){
+      const dr = d[i]-bg.r, dg = d[i+1]-bg.g, db = d[i+2]-bg.b;
+      const dist = Math.sqrt(dr*dr+dg*dg+db*db);
+      if(dist < t0){ d[i+3] = 0; }
+      else if(dist < t1){ d[i+3] = Math.round(d[i+3] * ((dist-t0)/(t1-t0))); }
+    }
+  }
+  const mcv = document.getElementById("matteCanvas");
+  mcv.getContext("2d").putImageData(out, 0, 0);
+}
+document.getElementById("matteToggle").onchange = renderMatte;
+document.getElementById("matteThresh").oninput = ()=>{
+  try{ localStorage.setItem("sl_matte_thresh", document.getElementById("matteThresh").value); }catch(e){}
+  renderMatte();
+};
+try{
+  const savedT = localStorage.getItem("sl_matte_thresh");
+  if(savedT) document.getElementById("matteThresh").value = savedT;
+}catch(e){}
+document.getElementById("matteRedoBtn").onclick = ()=>{
+  document.getElementById("matteStage").style.display = "none";
+  openCropStage();
+};
+document.getElementById("matteConfirmBtn").onclick = ()=>{
+  const w = cropCanvas.width, h = cropCanvas.height;
+  const src = document.getElementById("matteCanvas");
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  c.getContext("2d").drawImage(src, 0, 0);
+  finalCanvas = c;
+  document.getElementById("matteStage").style.display = "none";
+  showFinalPreview();
+};
+
+function showFinalPreview(){
+  drawBig(finalCanvas);
+  drawSmall(finalCanvas);
+  document.getElementById("previewRow").style.display = "flex";
+  document.getElementById("saveBtn").style.display = "block";
+  document.getElementById("continueBtn").style.display = "block";
+}
+function fitDraw(ctx, src, boxSize){
+  ctx.clearRect(0,0,boxSize,boxSize);
+  const k = Math.min(boxSize/src.width, boxSize/src.height);
+  const w = src.width*k, h = src.height*k;
+  ctx.drawImage(src, (boxSize-w)/2, (boxSize-h)/2, w, h);
+}
+function drawBig(src){
+  const ctx = document.getElementById("pvBig").getContext("2d");
+  fitDraw(ctx, src, 96);
+}
+function drawSmall(src){
+  const s = document.getElementById("pvSmall").getContext("2d");
+  fitDraw(s, src, 32);
+  const sil = document.getElementById("pvSil").getContext("2d");
+  fitDraw(sil, src, 32);
+  sil.globalCompositeOperation = "source-in";
+  sil.fillStyle = "#0a0d10";
+  sil.fillRect(0,0,32,32);
+  sil.globalCompositeOperation = "source-over";
+}
+
+document.getElementById("continueBtn").onclick = ()=>{
+  document.getElementById("previewRow").style.display = "none";
+  document.getElementById("saveBtn").style.display = "none";
+  document.getElementById("continueBtn").style.display = "none";
+  openCropStage();
+};
+
+document.getElementById("saveBtn").onclick = ()=>{
+  if(!finalCanvas){ toast("先に画像を切り出してください"); return; }
+  finalCanvas.toBlob((blob)=>{
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = fname();
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    const savedName = fname();
+    progress[key()] = true;
+    saveProgress();
+    curVariant = nextUnfilledVariant(curType, curMat);
+    refresh();
+    toast(savedName + " を保存しました(次: パターン" + curVariant.toUpperCase() + ")");
+  }, "image/png");
+};
+
+document.getElementById("resetBtn").onclick = ()=>{
+  if(!confirm("進捗表を全部リセットしますか?(A〜D全パターン・保存済みファイルは消えません)")) return;
+  progress = {}; saveProgress(); refresh();
+};
+
+let tt = null;
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(tt);
+  tt = setTimeout(()=> t.style.opacity = 0, 2200);
+}
+
+refresh();
+</script>
+</body>
+</html>
