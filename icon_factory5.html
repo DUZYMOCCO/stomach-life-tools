@@ -452,12 +452,18 @@ function openMatteStage(){
   document.getElementById("matteStage").style.display = "block";
   document.getElementById("flipToggle").checked = false;
   manualBg = null; pickMode = false;
+  // スライダーの現在値を明示的に読み直して同期(2個目以降で効きが初期化される問題の対策)
+  const slider = document.getElementById("matteThresh");
+  slider.value = 40;
+  document.getElementById("matteThreshVal").textContent = "40";
   document.getElementById("pickBgNote").textContent = "四隅の自動計測がズレる時(武器が隅まで張り出している時など)はこちらが確実です。ボタンを押してから、上のプレビュー画像の背景部分を1回タップしてください。";
   const w = cropCanvas.width, h = cropCanvas.height;
   const mcv = document.getElementById("matteCanvas");
   mcv.width = w; mcv.height = h;
   mcv.style.width = (w*Math.min(1,240/w))+"px";
   renderMatte();
+  // DOM状態が確定してからもう一度確実に再計算(2個目以降で効きが初期化される問題の保険)
+  requestAnimationFrame(()=> renderMatte());
 }
 function renderMatte(){
   const w = cropCanvas.width, h = cropCanvas.height;
@@ -531,8 +537,7 @@ function renderMatte(){
 document.getElementById("matteToggle").onchange = renderMatte;
 document.getElementById("flipToggle").onchange = renderMatte;
 function onThreshChange(){
-  const v = document.getElementById("matteThresh").value;
-  try{ localStorage.setItem("sl_matte_thresh", v); }catch(e){}
+  document.getElementById("matteThreshVal").textContent = document.getElementById("matteThresh").value;
   renderMatte();
 }
 document.getElementById("pickBgBtn").onclick = ()=>{
@@ -558,10 +563,6 @@ document.getElementById("matteCanvas").addEventListener("click",(e)=>{
 });
 document.getElementById("matteThresh").oninput = onThreshChange;
 document.getElementById("matteThresh").onchange = onThreshChange;
-try{
-  const savedT = localStorage.getItem("sl_matte_thresh");
-  if(savedT) document.getElementById("matteThresh").value = savedT;
-}catch(e){}
 document.getElementById("matteRedoBtn").onclick = ()=>{
   document.getElementById("matteStage").style.display = "none";
   openCropStage();
