@@ -160,7 +160,7 @@
       <button class="btn small" id="autoBgBtn">自動計測に戻す</button>
     </div>
     <p class="note" id="pickBgNote">四隅の自動計測がズレる時(武器が隅まで張り出している時など)はこちらが確実です。ボタンを押してから、上のプレビュー画像の背景部分を1回タップしてください。</p>
-    <p class="note">縁がガタガタ/削れすぎる時はスライダーで調整。おかしければ「やり直す」で選択に戻れます。</p>
+    <p class="note">背景は外周から辿って消すので、武器本体が背景と似た色でも内側は削れません。縁に背景色が残る時はスライダーを右へ、輪郭の外まで削れる時は左へ。</p>
     <div class="row2 mt">
       <button class="btn small" id="matteRedoBtn">やり直す</button>
       <button class="btn small primary" id="matteConfirmBtn">この内容で確定</button>
@@ -502,11 +502,27 @@ function renderMatte(){
     const t0 = thresh * 1.8;
     const t1 = t0 + 22;
     const d = out.data;
-    for(let i=0; i<d.length; i+=4){
-      const dr = d[i]-bg.r, dg = d[i+1]-bg.g, db = d[i+2]-bg.b;
-      const dist = Math.sqrt(dr*dr+dg*dg+db*db);
-      if(dist < t0){ d[i+3] = 0; }
-      else if(dist < t1){ d[i+3] = Math.round(d[i+3] * ((dist-t0)/(t1-t0))); }
+    // 外周から背景色を辿って繋がっている部分だけを消す(フラッドフィル方式)。
+    // 輪郭線で堰き止められるので、武器本体が背景と似た色でも内側は消えない。
+    const visited = new Uint8Array(w*h);
+    const stack = [];
+    for(let x=0; x<w; x++){ stack.push(x); stack.push((h-1)*w + x); }
+    for(let y=0; y<h; y++){ stack.push(y*w); stack.push(y*w + w - 1); }
+    while(stack.length){
+      const p = stack.pop();
+      if(p < 0 || p >= w*h || visited[p]) continue;
+      visited[p] = 1;
+      const i4 = p*4;
+      const dr = d[i4]-bg.r, dg = d[i4+1]-bg.g, db = d[i4+2]-bg.b;
+      const dist = Math.sqrt(dr*dr + dg*dg + db*db);
+      if(dist >= t1) continue; // 背景色じゃない=輪郭や武器に到達。ここで堰き止め
+      if(dist < t0){ d[i4+3] = 0; }
+      else { d[i4+3] = Math.round(d[i4+3] * ((dist-t0)/(t1-t0))); }
+      const x = p % w, y = (p / w) | 0;
+      if(x > 0) stack.push(p-1);
+      if(x < w-1) stack.push(p+1);
+      if(y > 0) stack.push(p-w);
+      if(y < h-1) stack.push(p+w);
     }
   }
   const mcv = document.getElementById("matteCanvas");
