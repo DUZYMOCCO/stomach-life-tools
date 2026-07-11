@@ -495,10 +495,13 @@ function renderMatte(){
 }
 document.getElementById("matteToggle").onchange = renderMatte;
 document.getElementById("flipToggle").onchange = renderMatte;
-document.getElementById("matteThresh").oninput = ()=>{
-  try{ localStorage.setItem("sl_matte_thresh", document.getElementById("matteThresh").value); }catch(e){}
+function onThreshChange(){
+  const v = document.getElementById("matteThresh").value;
+  try{ localStorage.setItem("sl_matte_thresh", v); }catch(e){}
   renderMatte();
-};
+}
+document.getElementById("matteThresh").oninput = onThreshChange;
+document.getElementById("matteThresh").onchange = onThreshChange;
 try{
   const savedT = localStorage.getItem("sl_matte_thresh");
   if(savedT) document.getElementById("matteThresh").value = savedT;
