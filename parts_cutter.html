@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>パーツ切り出しツール - ストマックライフ</title>
+<style>
+  :root{
+    --bg:#14181d; --panel:#1e242b; --panel2:#262e37; --line:#39434e;
+    --text:#e8edf2; --dim:#8b98a5; --accent:#39d3e6; --accent-dark:#1a7f8e;
+    --danger:#e66a6a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+    font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+    overscroll-behavior:none;}
+  #app{display:flex;flex-direction:column;height:100%;}
+
+  header{display:flex;gap:8px;align-items:center;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--line);}
+  header h1{font-size:13px;font-weight:600;color:var(--accent);letter-spacing:.05em;white-space:nowrap;}
+  #openBtn{flex-shrink:0;}
+  #charName{flex:1;min-width:60px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    color:var(--text);padding:8px 10px;font-size:14px;}
+  #charName::placeholder{color:var(--dim);}
+
+  #canvasWrap{flex:1;position:relative;overflow:hidden;}
+  #cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block;}
+  #hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--dim);font-size:14px;text-align:center;line-height:1.8;pointer-events:none;padding:20px;}
+
+  .bar{display:flex;gap:6px;padding:8px 10px;background:var(--panel);border-top:1px solid var(--line);align-items:center;}
+  .seg{display:flex;background:var(--panel2);border-radius:10px;padding:3px;gap:3px;flex-shrink:0;}
+  .seg button{border:none;background:transparent;color:var(--dim);font-size:13px;padding:9px 12px;border-radius:8px;font-weight:600;}
+  .seg button.on{background:var(--accent);color:#04252b;}
+  button{font-family:inherit;-webkit-user-select:none;user-select:none;}
+  .btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    font-size:13px;padding:10px 12px;border-radius:10px;font-weight:600;flex-shrink:0;}
+  .btn:active{background:var(--line);}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#04252b;}
+  .btn.small{padding:8px 10px;font-size:12px;}
+  .spacer{flex:1;}
+
+  #partsBar{max-height:34vh;overflow-y:auto;background:var(--panel);border-top:1px solid var(--line);
+    -webkit-overflow-scrolling:touch;}
+  #partsHead{display:flex;align-items:center;gap:8px;padding:8px 10px;position:sticky;top:0;background:var(--panel);}
+  #partsHead span{font-size:12px;color:var(--dim);font-weight:600;}
+  #posKeepLbl{font-size:12px;color:var(--text);display:flex;align-items:center;gap:5px;font-weight:600;}
+  #posKeepLbl input{width:18px;height:18px;accent-color:var(--accent);}
+  .part{display:flex;align-items:center;gap:10px;padding:6px 10px;border-top:1px solid var(--line);}
+  .part img{width:44px;height:44px;object-fit:contain;background:
+    repeating-conic-gradient(#2c343d 0% 25%, #222932 0% 50%) 0 0/12px 12px;border-radius:6px;flex-shrink:0;}
+  .part .nm{flex:1;font-size:13px;word-break:break-all;color:var(--text);}
+  .part .del{color:var(--danger);border-color:transparent;background:transparent;}
+
+  /* パーツ名モーダル */
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:10;}
+  #modal.show{display:flex;}
+  #sheet{background:var(--panel);width:100%;border-radius:16px 16px 0 0;padding:14px 14px 24px;max-height:75vh;overflow-y:auto;}
+  #sheet h2{font-size:14px;margin-bottom:4px;}
+  #sheet p{font-size:12px;color:var(--dim);margin-bottom:12px;}
+  #presetGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+  #presetGrid button{border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    border-radius:10px;padding:12px 4px;font-size:13px;font-weight:600;}
+  #presetGrid button small{display:block;color:var(--dim);font-weight:400;font-size:10px;margin-top:2px;}
+  #customRow{display:flex;gap:8px;}
+  #customName{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    color:var(--text);padding:10px;font-size:14px;}
+  #helpModal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:11;}
+  #helpModal.show{display:flex;}
+  #helpSheet{background:var(--panel);width:100%;border-radius:16px 16px 0 0;padding:16px 16px 30px;
+    max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  #helpSheet h2{font-size:15px;color:var(--accent);margin-bottom:8px;}
+  #helpSheet h3{font-size:13px;margin:16px 0 6px;color:var(--text);border-left:3px solid var(--accent);padding-left:8px;}
+  #helpSheet p,#helpSheet li{font-size:12.5px;color:var(--dim);line-height:1.75;}
+  #helpSheet ul,#helpSheet ol{padding-left:20px;}
+  #helpSheet b{color:var(--text);}
+  #deformModal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:12;}
+  #deformModal.show{display:flex;}
+  #deformSheet{background:var(--panel);width:100%;border-radius:16px 16px 0 0;padding:14px 14px 26px;
+    max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  #deformSheet h2{font-size:14px;margin-bottom:4px;}
+  #deformSheet p{font-size:11.5px;color:var(--dim);margin-bottom:10px;line-height:1.6;}
+  #deformPv{display:block;margin:0 auto 12px;border-radius:10px;max-width:100%;
+    background:repeating-conic-gradient(#2c343d 0% 25%, #222932 0% 50%) 0 0/14px 14px;}
+  .srow{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .srow label{font-size:12px;color:var(--text);width:66px;flex-shrink:0;font-weight:600;}
+  .srow input[type=range]{flex:1;accent-color:var(--accent);height:30px;}
+  .srow span{font-size:12px;color:var(--dim);width:46px;text-align:right;}
+  .drow{display:flex;gap:8px;margin-top:12px;}
+  .drow .btn{flex:1;}
+  .part .btn{padding:8px 7px;font-size:11px;}
+  #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--accent);color:#04252b;
+    font-size:13px;font-weight:700;padding:10px 16px;border-radius:20px;opacity:0;transition:opacity .25s;
+    pointer-events:none;z-index:20;white-space:nowrap;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>パーツ切り出し</h1>
+    <button class="btn small" id="openBtn">画像を開く</button>
+    <input type="text" id="charName" placeholder="キャラ名(英語) 例: hero">
+    <button class="btn small" id="helpBtn">?</button>
+    <input type="file" id="fileInput" accept="image/*" hidden>
+  </header>
+
+  <div id="canvasWrap">
+    <canvas id="cv"></canvas>
+    <div id="hint">「画像を開く」から切り出したい絵を読み込んでください<br><br>
+      二本指: ズーム / 移動<br>点打ち: タップで点を置く・点を引きずって微調整<br>なぞり: 指かペンで輪郭を一筆書き</div>
+  </div>
+
+  <div class="bar">
+    <div class="seg" id="modeSeg">
+      <button data-m="move" class="on">移動</button>
+      <button data-m="tap">点打ち</button>
+      <button data-m="lasso">なぞり</button>
+    </div>
+    <button class="btn small" id="gapBtn" style="display:none">間隔:中</button>
+    <div class="spacer"></div>
+    <button class="btn small" id="undoBtn">1点戻す</button>
+    <button class="btn small" id="clearBtn">クリア</button>
+    <button class="btn primary" id="cutBtn">切り出す</button>
+  </div>
+
+  <div id="partsBar">
+    <div id="partsHead">
+      <span id="partsCount">パーツ: 0</span>
+      <div class="spacer"></div>
+      <label id="posKeepLbl"><input type="checkbox" id="posKeep" checked> 位置キープ</label>
+      <button class="btn small" id="saveAllBtn">全部保存</button>
+    </div>
+    <div id="partsList"></div>
+  </div>
+</div>
+
+<div id="modal">
+  <div id="sheet">
+    <h2>パーツ名を選ぶ</h2>
+    <p>ファイル名: <b id="previewName">hero_head.png</b></p>
+    <div id="presetGrid"></div>
+    <div id="customRow">
+      <input type="text" id="customName" placeholder="自由入力(英語)">
+      <button class="btn primary" id="customOk">決定</button>
+    </div>
+    <br>
+    <button class="btn" id="modalCancel" style="width:100%">キャンセル</button>
+  </div>
+</div>
+<div id="deformModal">
+  <div id="deformSheet">
+    <h2>変形工房</h2>
+    <p>質感を保ったまま形だけ変えて亜種を作る。「別名で追加」で <b id="deformName"></b> として一覧に増える(元パーツは無傷)。</p>
+    <canvas id="deformPv" width="260" height="260"></canvas>
+    <div id="deformSliders"></div>
+    <div class="drow">
+      <button class="btn" id="deformReset">リセット</button>
+      <button class="btn primary" id="deformAdd">別名で追加</button>
+    </div>
+    <button class="btn" id="deformCancel" style="width:100%;margin-top:8px">閉じる</button>
+  </div>
+</div>
+<div id="helpModal">
+  <div id="helpSheet">
+    <h2>マニュアル</h2>
+
+    <h3>基本の流れ</h3>
+    <ol>
+      <li>「画像を開く」で一枚絵を読み込む</li>
+      <li>キャラ名を英語で入力(ファイル名の頭になる)</li>
+      <li>パーツを囲む → 「切り出す」 → パーツ名ボタンを選ぶ</li>
+      <li>一覧から「保存」(ファイルAppのダウンロードに入る)</li>
+    </ol>
+
+    <h3>囲み方(3つのモード)</h3>
+    <ul>
+      <li><b>移動</b>: 1本指で画面を動かす。<b>二本指のズームはどのモードでも常に効く</b></li>
+      <li><b>点打ち</b>: タップで点を置いて多角形で囲む。<b>置いた点は引きずって微調整できる</b>。「1点戻す」で1個消える</li>
+      <li><b>なぞり</b>: 指かペンで一筆書き。ざっくりなぞってから点打ちに切り替えて点を直す合わせ技が速い</li>
+    </ul>
+
+    <h3>切り方のコツ(重要)</h3>
+    <p><b>関節は少し重ねて、丸く囲む。</b>上腕なら肩ピッタリで切らず胴体側に少し食い込ませる。ピッタリで切るとGodotで回した時に関節に隙間が開く。迷ったら「気持ち大きめ・関節は丸く」。</p>
+
+    <h3>位置キープとは</h3>
+    <p>ONだと全パーツが<b>元画像と同じサイズ・同じ位置</b>の透過PNGで保存される。Godotに読み込んで全部座標(0,0)に置くだけで、元の一枚絵の姿に自動で組み上がる(手作業の配置が不要になる)。アイコンなど単品素材が欲しい時だけOFF。</p>
+
+    <h3>反転ボタン</h3>
+    <p>パーツ一覧の「反転」で左右反転コピーを作る。名前の <b>_l / _r</b> は自動で入れ替わる。<b>左右対称のキャラは腕・脚を左側だけ切ればOK</b>(右は反転で量産)。作業量がほぼ半分になる。</p>
+
+    <h3>変形ボタン(亜種の量産)</h3>
+    <p>パーツの質感を保ったまま形だけ変える。<b>横幅/縦幅</b>で伸縮、<b>上すぼみ/下すぼみ</b>で先細り(とんがり)、<b>中ぶくれ</b>は+で樽型・−でくびれ。「別名で追加」で <b>_v2, _v3…</b> と自動命名され、元パーツは無傷。マイナーチェンジ敵の量産向き。<br>※<b>全体のサイズ違い・色違いはGodot側の設定(scale/modulate)が無料</b>なのでファイル化不要。このツールは「形が変わる」亜種専用。</p>
+
+    <h3>Godot側の時短テク</h3>
+    <ul>
+      <li><b>リグの使い回し</b>: 1体組んだら骨組みごと複製して絵だけ差し替え。2体目以降は組み立てゼロ、アニメも付いてくる</li>
+      <li><b>色差分は再生成しない</b>: Godotのmodulate(色掛け)で色違い・発光個体を無料で量産</li>
+      <li><b>キーは数ポーズでいい</b>: 歩きなら4ポーズ程度。間の動きはGodotが自動で滑らかに補間する</li>
+      <li><b>揺れもの(しっぽ・触角)はコードで自動</b>: キーを打たず揺らし続けるスクリプトで。Claude Codeに一言で作れる</li>
+      <li><b>雑魚は1〜3パーツで十分</b>: 虫系は1枚絵の伸び縮みでも生きて見える。全敵フルリグは不要</li>
+    </ul>
+
+    <h3>保存先</h3>
+    <p>iPhoneでは「ファイル」App → ダウンロードに入る。<b>「全部保存」は1つのzipにまとまる</b>(キャラ名_parts.zip)。PCへの転送も1ファイルで済む。ネット接続がない時だけ1枚ずつの保存に自動で切り替わる。なぞりの点の細かさは、なぞりモード中に出る「間隔」ボタンで細/中/粗を切替(ペンなら細、指なら中〜粗が目安)。</p>
+
+    <br>
+    <button class="btn primary" id="helpClose" style="width:100%">閉じる</button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+"use strict";
+// ===== 状態 =====
+let img = null;               // 元画像 (Image)
+let view = {scale:1, ox:0, oy:0};  // 表示変換
+let mode = "move";
+let points = [];              // 選択ポリゴン(画像座標)
+let parts = [];               // {canvas, name}
+let pendingCanvas = null;     // 命名待ちの切り出し結果
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const hint = document.getElementById("hint");
+const dpr = window.devicePixelRatio || 1;
+
+// 透過確認用チェッカーパターン
+const patC = document.createElement("canvas");
+patC.width = patC.height = 24;
+const pctx = patC.getContext("2d");
+pctx.fillStyle = "#20262e"; pctx.fillRect(0,0,24,24);
+pctx.fillStyle = "#181d24"; pctx.fillRect(0,0,12,12); pctx.fillRect(12,12,12,12);
+let checker = null;
+
+// ===== キャンバスサイズ =====
+function resize(){
+  const r = cv.getBoundingClientRect();
+  cv.width = r.width * dpr; cv.height = r.height * dpr;
+  checker = ctx.createPattern(patC, "repeat");
+  draw();
+}
+window.addEventListener("resize", resize);
+
+// ===== 描画 =====
+function draw(){
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const w = cv.width/dpr, h = cv.height/dpr;
+  ctx.fillStyle = checker || "#1a1f26";
+  ctx.fillRect(0,0,w,h);
+  if(!img) return;
+
+  ctx.save();
+  ctx.translate(view.ox, view.oy);
+  ctx.scale(view.scale, view.scale);
+  ctx.imageSmoothingEnabled = view.scale < 3; // 拡大時はドットをくっきり
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
+
+  // 選択ポリゴンのオーバーレイ(画面座標で線幅一定)
+  if(points.length){
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#39d3e6";
+    ctx.fillStyle = "rgba(57,211,230,0.12)";
+    ctx.beginPath();
+    points.forEach((p,i)=>{
+      const s = toScreen(p);
+      if(i===0) ctx.moveTo(s.x,s.y); else ctx.lineTo(s.x,s.y);
+    });
+    if(points.length>2){ ctx.closePath(); ctx.fill(); }
+    ctx.stroke();
+    // 点マーカー
+    points.forEach(p=>{
+      const s = toScreen(p);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 6, 0, Math.PI*2);
+      ctx.fillStyle = "#39d3e6"; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = "#0d3a41"; ctx.stroke();
+    });
+    ctx.restore();
+  }
+}
+function toScreen(p){ return {x: p.x*view.scale + view.ox, y: p.y*view.scale + view.oy}; }
+function toImage(x,y){ return {x:(x-view.ox)/view.scale, y:(y-view.oy)/view.scale}; }
+
+// ===== 画像読み込み =====
+document.getElementById("openBtn").onclick = ()=> document.getElementById("fileInput").click();
+document.getElementById("fileInput").onchange = (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  const url = URL.createObjectURL(f);
+  const im = new Image();
+  im.onload = ()=>{
+    img = im; points = [];
+    // 画面にフィット
+    const w = cv.width/dpr, h = cv.height/dpr;
+    view.scale = Math.min(w/im.width, h/im.height) * 0.95;
+    view.ox = (w - im.width*view.scale)/2;
+    view.oy = (h - im.height*view.scale)/2;
+    hint.style.display = "none";
+    URL.revokeObjectURL(url);
+    draw();
+  };
+  im.src = url;
+  e.target.value = "";
+};
+
+// ===== モード切替 =====
+document.getElementById("modeSeg").addEventListener("click",(e)=>{
+  const b = e.target.closest("button"); if(!b) return;
+  mode = b.dataset.m;
+  document.querySelectorAll("#modeSeg button").forEach(x=>x.classList.toggle("on", x===b));
+  document.getElementById("gapBtn").style.display = (mode === "lasso") ? "block" : "none";
+});
+
+// なぞりのサンプリング間隔(細/中/粗)
+let lassoGap = 6;
+const GAPS = [["細",3],["中",6],["粗",12]];
+let gapIdx = 1;
+document.getElementById("gapBtn").onclick = ()=>{
+  gapIdx = (gapIdx+1) % GAPS.length;
+  lassoGap = GAPS[gapIdx][1];
+  document.getElementById("gapBtn").textContent = "間隔:" + GAPS[gapIdx][0];
+};
+
+// ===== ポインタ操作 =====
+const active = new Map(); // pointerId -> {x,y}
+let pinchStart = null;    // {dist, scale, mid, ox, oy}
+let dragPointIdx = -1;
+let panStart = null;
+let lassoOn = false;
+let downPos = null, moved = false;
+
+cv.addEventListener("pointerdown",(e)=>{
+  cv.setPointerCapture(e.pointerId);
+  active.set(e.pointerId, {x:e.offsetX, y:e.offsetY});
+  moved = false; downPos = {x:e.offsetX, y:e.offsetY};
+
+  if(active.size === 2){
+    // ピンチ開始(進行中の操作は中断)
+    lassoOn = false; dragPointIdx = -1; panStart = null;
+    const [a,b] = [...active.values()];
+    pinchStart = {
+      dist: Math.hypot(a.x-b.x, a.y-b.y),
+      scale: view.scale,
+      mid: {x:(a.x+b.x)/2, y:(a.y+b.y)/2},
+      ox: view.ox, oy: view.oy
+    };
+    return;
+  }
+  if(!img) return;
+
+  if(mode === "move"){
+    panStart = {x:e.offsetX, y:e.offsetY, ox:view.ox, oy:view.oy};
+  } else if(mode === "tap"){
+    // 既存の点の近くならドラッグ開始
+    dragPointIdx = hitPoint(e.offsetX, e.offsetY);
+  } else if(mode === "lasso"){
+    lassoOn = true;
+    points.push(toImage(e.offsetX, e.offsetY));
+    draw();
+  }
+});
+
+cv.addEventListener("pointermove",(e)=>{
+  if(!active.has(e.pointerId)) return;
+  active.set(e.pointerId, {x:e.offsetX, y:e.offsetY});
+  if(downPos && Math.hypot(e.offsetX-downPos.x, e.offsetY-downPos.y) > 8) moved = true;
+
+  if(active.size === 2 && pinchStart){
+    const [a,b] = [...active.values()];
+    const d = Math.hypot(a.x-b.x, a.y-b.y);
+    const mid = {x:(a.x+b.x)/2, y:(a.y+b.y)/2};
+    const k = d / pinchStart.dist;
+    const ns = Math.min(Math.max(pinchStart.scale * k, 0.05), 40);
+    // ピンチ中心を保ちながら拡縮+パン
+    const imgMid = {x:(pinchStart.mid.x - pinchStart.ox)/pinchStart.scale,
+                    y:(pinchStart.mid.y - pinchStart.oy)/pinchStart.scale};
+    view.scale = ns;
+    view.ox = mid.x - imgMid.x*ns;
+    view.oy = mid.y - imgMid.y*ns;
+    draw();
+    return;
+  }
+  if(!img) return;
+
+  if(mode === "move" && panStart){
+    view.ox = panStart.ox + (e.offsetX - panStart.x);
+    view.oy = panStart.oy + (e.offsetY - panStart.y);
+    draw();
+  } else if(mode === "tap" && dragPointIdx >= 0){
+    points[dragPointIdx] = toImage(e.offsetX, e.offsetY);
+    draw();
+  } else if(mode === "lasso" && lassoOn){
+    const last = points[points.length-1];
+    const cur = toImage(e.offsetX, e.offsetY);
+    const screenDist = Math.hypot((cur.x-last.x)*view.scale, (cur.y-last.y)*view.scale);
+    if(screenDist > lassoGap){ points.push(cur); draw(); }
+  }
+});
+
+function endPointer(e){
+  const wasSize = active.size;
+  active.delete(e.pointerId);
+  if(wasSize === 2) pinchStart = null;
+
+  if(mode === "tap" && !moved && dragPointIdx < 0 && img && wasSize === 1){
+    points.push(toImage(e.offsetX, e.offsetY));
+    draw();
+  }
+  dragPointIdx = -1; panStart = null; lassoOn = false; downPos = null;
+}
+cv.addEventListener("pointerup", endPointer);
+cv.addEventListener("pointercancel", endPointer);
+
+function hitPoint(sx, sy){
+  for(let i=points.length-1; i>=0; i--){
+    const s = toScreen(points[i]);
+    if(Math.hypot(s.x-sx, s.y-sy) < 20) return i;
+  }
+  return -1;
+}
+
+// ===== 操作ボタン =====
+document.getElementById("undoBtn").onclick = ()=>{ points.pop(); draw(); };
+document.getElementById("clearBtn").onclick = ()=>{ points = []; draw(); };
+
+document.getElementById("cutBtn").onclick = ()=>{
+  if(!img){ toast("先に画像を開いてください"); return; }
+  if(points.length < 3){ toast("点が3つ以上必要です"); return; }
+  const xs = points.map(p=>p.x), ys = points.map(p=>p.y);
+  const minX = Math.max(0, Math.floor(Math.min(...xs)));
+  const minY = Math.max(0, Math.floor(Math.min(...ys)));
+  const maxX = Math.min(img.width,  Math.ceil(Math.max(...xs)));
+  const maxY = Math.min(img.height, Math.ceil(Math.max(...ys)));
+  const w = maxX-minX, h = maxY-minY;
+  if(w < 2 || h < 2){ toast("囲みが小さすぎます"); return; }
+  const posKeep = document.getElementById("posKeep").checked;
+  const c = document.createElement("canvas");
+  if(posKeep){ c.width = img.width; c.height = img.height; }
+  else{ c.width = w; c.height = h; }
+  const cx = c.getContext("2d");
+  const dx = posKeep ? 0 : minX, dy = posKeep ? 0 : minY;
+  cx.beginPath();
+  points.forEach((p,i)=>{ i ? cx.lineTo(p.x-dx, p.y-dy) : cx.moveTo(p.x-dx, p.y-dy); });
+  cx.closePath(); cx.clip();
+  cx.drawImage(img, -dx, -dy);
+  pendingCanvas = c;
+  openModal();
+};
+
+// ===== パーツ名モーダル =====
+const PRESETS = [
+  ["頭","head"],["胴","torso"],["腰","hip"],
+  ["右上腕","arm_upper_r"],["右前腕","arm_lower_r"],["右手","hand_r"],
+  ["左上腕","arm_upper_l"],["左前腕","arm_lower_l"],["左手","hand_l"],
+  ["右もも","leg_upper_r"],["右すね","leg_lower_r"],["右足","foot_r"],
+  ["左もも","leg_upper_l"],["左すね","leg_lower_l"],["左足","foot_l"],
+  ["武器","weapon"],["しっぽ","tail"],["羽","wing"],
+  ["触角","antenna"],["破片","gib"],["その他","part"]
+];
+const grid = document.getElementById("presetGrid");
+PRESETS.forEach(([jp,en])=>{
+  const b = document.createElement("button");
+  b.innerHTML = jp + "<small>" + en + "</small>";
+  b.onclick = ()=> finishNaming(en);
+  grid.appendChild(b);
+});
+function charPrefix(){
+  let n = document.getElementById("charName").value.trim().toLowerCase();
+  n = n.replace(/[^a-z0-9_]/g, "");
+  return n || "chara";
+}
+function openModal(){
+  document.getElementById("previewName").textContent = charPrefix() + "_head.png";
+  document.getElementById("customName").value = "";
+  document.getElementById("modal").classList.add("show");
+}
+document.getElementById("modalCancel").onclick = ()=>{
+  pendingCanvas = null;
+  document.getElementById("modal").classList.remove("show");
+};
+document.getElementById("customOk").onclick = ()=>{
+  let n = document.getElementById("customName").value.trim().toLowerCase().replace(/[^a-z0-9_]/g,"");
+  if(!n){ toast("英語で名前を入力してください"); return; }
+  finishNaming(n);
+};
+function finishNaming(partName){
+  if(!pendingCanvas) return;
+  let base = charPrefix() + "_" + partName;
+  let name = base + ".png", i = 2;
+  while(parts.some(p=>p.name===name)){ name = base + "_" + i + ".png"; i++; }
+  parts.push({canvas: pendingCanvas, name});
+  pendingCanvas = null;
+  document.getElementById("modal").classList.remove("show");
+  points = []; draw();
+  renderParts();
+  toast(name + " を切り出しました");
+}
+
+// ===== パーツ一覧・保存 =====
+function renderParts(){
+  document.getElementById("partsCount").textContent = "パーツ: " + parts.length;
+  const list = document.getElementById("partsList");
+  list.innerHTML = "";
+  parts.forEach((p, idx)=>{
+    const row = document.createElement("div");
+    row.className = "part";
+    const im = document.createElement("img");
+    im.src = p.canvas.toDataURL("image/png");
+    const nm = document.createElement("div");
+    nm.className = "nm"; nm.textContent = p.name;
+    const df = document.createElement("button");
+    df.className = "btn small"; df.textContent = "変形";
+    df.onclick = ()=> openDeform(p);
+    const fl = document.createElement("button");
+    fl.className = "btn small"; fl.textContent = "反転";
+    fl.onclick = ()=> flipPart(p);
+    const sv = document.createElement("button");
+    sv.className = "btn small"; sv.textContent = "保存";
+    sv.onclick = ()=> savePart(p);
+    const del = document.createElement("button");
+    del.className = "btn small del"; del.textContent = "削除";
+    del.onclick = ()=>{ parts.splice(idx,1); renderParts(); };
+    row.append(im, nm, df, fl, sv, del);
+    list.appendChild(row);
+  });
+}
+function savePart(p){
+  p.canvas.toBlob((blob)=>{
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = p.name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  }, "image/png");
+}
+document.getElementById("saveAllBtn").onclick = async ()=>{
+  if(!parts.length){ toast("パーツがありません"); return; }
+  if(window.JSZip){
+    toast("zipを作成中…");
+    const zip = new JSZip();
+    for(const p of parts){
+      const blob = await new Promise(r=> p.canvas.toBlob(r, "image/png"));
+      zip.file(p.name, blob);
+    }
+    const out = await zip.generateAsync({type:"blob"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(out);
+    a.download = charPrefix() + "_parts.zip";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+    toast(charPrefix() + "_parts.zip を保存しました");
+  } else {
+    // オフライン等でJSZipが読めない時は従来の1枚ずつ方式
+    for(const p of parts){
+      savePart(p);
+      await new Promise(r=>setTimeout(r, 500));
+    }
+    toast("1枚ずつ保存しました(オフライン時)");
+  }
+};
+
+// ===== 反転コピー(_l/_r自動入替) =====
+function flipName(name){
+  let base = name.replace(/\.png$/,"");
+  if(/_l(_\d+)?$/.test(base)) base = base.replace(/_l((_\d+)?)$/,"_r$1");
+  else if(/_r(_\d+)?$/.test(base)) base = base.replace(/_r((_\d+)?)$/,"_l$1");
+  else base += "_flip";
+  return base + ".png";
+}
+function flipPart(p){
+  const c = document.createElement("canvas");
+  c.width = p.canvas.width; c.height = p.canvas.height;
+  const cx = c.getContext("2d");
+  cx.translate(c.width, 0); cx.scale(-1, 1);
+  cx.drawImage(p.canvas, 0, 0);
+  let name = flipName(p.name);
+  let base = name.replace(/\.png$/,""), i = 2;
+  while(parts.some(q=>q.name===name)){ name = base + "_" + i + ".png"; i++; }
+  parts.push({canvas: c, name});
+  renderParts();
+  toast(name + " を作成しました");
+}
+
+// ===== 変形工房 =====
+const DSLIDERS = [
+  ["dw","横幅",30,250,100],["dh","縦幅",30,250,100],
+  ["tt","上すぼみ",0,90,0],["tb","下すぼみ",0,90,0],["bg","中ぶくれ",-60,60,0]
+];
+let deformSrc = null, deformPart = null, deformResult = null;
+(function buildSliders(){
+  const box = document.getElementById("deformSliders");
+  DSLIDERS.forEach(([id,jp,min,max,def])=>{
+    const row = document.createElement("div");
+    row.className = "srow";
+    row.innerHTML = '<label>'+jp+'</label>'+
+      '<input type="range" id="sl_'+id+'" min="'+min+'" max="'+max+'" value="'+def+'">'+
+      '<span id="sv_'+id+'">'+def+'%</span>';
+    box.appendChild(row);
+  });
+  DSLIDERS.forEach(([id])=>{
+    document.getElementById("sl_"+id).addEventListener("input", ()=>{
+      document.getElementById("sv_"+id).textContent = document.getElementById("sl_"+id).value + "%";
+      requestAnimationFrame(renderDeform);
+    });
+  });
+})();
+function sval(id){ return parseFloat(document.getElementById("sl_"+id).value); }
+
+function contentBBox(c){
+  const d = c.getContext("2d").getImageData(0,0,c.width,c.height).data;
+  let minX=c.width, minY=c.height, maxX=-1, maxY=-1;
+  for(let y=0;y<c.height;y++){
+    for(let x=0;x<c.width;x++){
+      if(d[(y*c.width+x)*4+3] > 8){
+        if(x<minX)minX=x; if(x>maxX)maxX=x;
+        if(y<minY)minY=y; if(y>maxY)maxY=y;
+      }
+    }
+  }
+  return maxX<0 ? null : {x:minX, y:minY, w:maxX-minX+1, h:maxY-minY+1};
+}
+
+function openDeform(p){
+  const bb = contentBBox(p.canvas);
+  if(!bb){ toast("中身が空のパーツです"); return; }
+  const src = document.createElement("canvas");
+  src.width = bb.w; src.height = bb.h;
+  src.getContext("2d").drawImage(p.canvas, bb.x, bb.y, bb.w, bb.h, 0, 0, bb.w, bb.h);
+  deformSrc = src; deformPart = {part:p, bb:bb};
+  DSLIDERS.forEach(([id,,,,def])=>{
+    document.getElementById("sl_"+id).value = def;
+    document.getElementById("sv_"+id).textContent = def + "%";
+  });
+  document.getElementById("deformName").textContent = variantName(p.name);
+  document.getElementById("deformModal").classList.add("show");
+  renderDeform();
+}
+function computeDeform(){
+  const sw = deformSrc.width, sh = deformSrc.height;
+  const kx = sval("dw")/100, ky = sval("dh")/100;
+  const tt = sval("tt")/100, tb = sval("tb")/100, bg = sval("bg")/100;
+  const outH = Math.max(2, Math.round(sh*ky));
+  const outW = Math.max(2, Math.ceil(sw*kx*(1+Math.max(0,bg))) + 2);
+  const c = document.createElement("canvas");
+  c.width = outW; c.height = outH;
+  const cx = c.getContext("2d");
+  cx.imageSmoothingEnabled = true;
+  for(let y=0; y<outH; y++){
+    const t = outH>1 ? y/(outH-1) : 0;
+    let f = (1-tt)*(1-t) + (1-tb)*t;
+    f *= 1 + bg*Math.sin(Math.PI*t);
+    const rowW = Math.max(1, sw*kx*f);
+    const sy = Math.min(sh-1, y/ky);
+    cx.drawImage(deformSrc, 0, sy, sw, 1, (outW-rowW)/2, y, rowW, 1);
+  }
+  return c;
+}
+function renderDeform(){
+  if(!deformSrc) return;
+  deformResult = computeDeform();
+  const pv = document.getElementById("deformPv");
+  const px = pv.getContext("2d");
+  px.clearRect(0,0,pv.width,pv.height);
+  const k = Math.min(pv.width/deformResult.width, pv.height/deformResult.height, 1) * 0.92;
+  const w = deformResult.width*k, h = deformResult.height*k;
+  px.imageSmoothingEnabled = k < 2;
+  px.drawImage(deformResult, (pv.width-w)/2, (pv.height-h)/2, w, h);
+}
+function variantName(name){
+  let base = name.replace(/\.png$/,"");
+  let i = 2, n = base + "_v2";
+  while(parts.some(p=>p.name === n + ".png")){ i++; n = base + "_v" + i; }
+  return n + ".png";
+}
+document.getElementById("deformReset").onclick = ()=>{
+  DSLIDERS.forEach(([id,,,,def])=>{
+    document.getElementById("sl_"+id).value = def;
+    document.getElementById("sv_"+id).textContent = def + "%";
+  });
+  renderDeform();
+};
+document.getElementById("deformCancel").onclick = ()=>{
+  document.getElementById("deformModal").classList.remove("show");
+  deformSrc = null; deformPart = null; deformResult = null;
+};
+document.getElementById("deformAdd").onclick = ()=>{
+  if(!deformResult || !deformPart) return;
+  const src = deformPart.part.canvas, bb = deformPart.bb, d = deformResult;
+  const outW = Math.max(src.width, d.width), outH = Math.max(src.height, d.height);
+  const c = document.createElement("canvas");
+  c.width = outW; c.height = outH;
+  const cx = c.getContext("2d");
+  const offX = (outW - src.width)/2, offY = (outH - src.height)/2;
+  const centerX = bb.x + bb.w/2 + offX, centerY = bb.y + bb.h/2 + offY;
+  cx.drawImage(d, Math.round(centerX - d.width/2), Math.round(centerY - d.height/2));
+  const name = variantName(deformPart.part.name);
+  parts.push({canvas:c, name});
+  renderParts();
+  toast(name + " を作成しました");
+  document.getElementById("deformName").textContent = variantName(deformPart.part.name);
+};
+
+// ===== マニュアル =====
+document.getElementById("helpBtn").onclick = ()=> document.getElementById("helpModal").classList.add("show");
+document.getElementById("helpClose").onclick = ()=> document.getElementById("helpModal").classList.remove("show");
+
+// ===== トースト =====
+let toastTimer = null;
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.style.opacity = 0, 2200);
+}
+
+resize();
+</script>
+</body>
+</html>
