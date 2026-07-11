@@ -137,6 +137,7 @@
       <button class="btn small" id="quadBtn">4分割から選ぶ</button>
     </div>
     <button class="btn small primary mt" id="quadSeqBtn">4分割をA〜Dに一括保存(4枚まとめて)</button>
+    <button class="btn small primary mt" id="quadSeqFlipBtn">4分割を左右反転してA〜Dに一括保存</button>
     <div id="quadGrid"></div>
     <button class="btn small primary mt" id="cropConfirmBtn">選択範囲を切り出す</button>
   </div>
@@ -181,6 +182,7 @@
 
 <div id="toast"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 "use strict";
 const TYPES = [
@@ -399,40 +401,59 @@ document.getElementById("useWholeBtn").onclick = ()=>{
 };
 
 // ===== 4分割をA→B→C→Dへ一括で名付け保存 =====
-document.getElementById("quadSeqBtn").onclick = ()=>{
+document.getElementById("quadSeqBtn").onclick = ()=> quadBatchSave(false);
+document.getElementById("quadSeqFlipBtn").onclick = ()=> quadBatchSave(true);
+
+async function quadBatchSave(flip){
   const hw = rawImg.width/2, hh = rawImg.height/2;
   const coords = [[0,0],[hw,0],[0,hh],[hw,hh]]; // 左上→右上→左下→右下
-  let done = 0;
-  coords.forEach(([sx,sy], i)=>{
+  const blobs = []; // {name, blob}
+  for(let i=0; i<coords.length; i++){
+    const [sx,sy] = coords[i];
     const variant = VARIANTS[i];
-    // 各コマを原寸で切り出し
     const c = document.createElement("canvas");
     c.width = Math.round(hw); c.height = Math.round(hh);
-    c.getContext("2d").drawImage(rawImg, sx, sy, hw, hh, 0, 0, c.width, c.height);
-    // 透過処理を適用
+    const cx = c.getContext("2d");
+    if(flip){ cx.translate(c.width, 0); cx.scale(-1, 1); }
+    cx.drawImage(rawImg, sx, sy, hw, hh, 0, 0, c.width, c.height);
     const finalC = applyMatteTo(c);
-    // ファイル名(現在の型式×素材＋パターン)
     const nm = "weapon_" + curType + "_" + curMat + "_" + variant + ".png";
-    // 保存
-    finalC.toBlob((blob)=>{
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = nm;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2500);
-    }, "image/png");
-    // 進捗に記録
+    const blob = await new Promise(r=> finalC.toBlob(r, "image/png"));
+    blobs.push({name:nm, blob});
     progress[curType + "_" + curMat + "_" + variant] = true;
-    done++;
-  });
+  }
   saveProgress();
   refresh();
-  toast(curType + "×" + curMat + " のA〜D 4枚を保存しました");
-  // 切り出しステージを閉じる
   document.getElementById("cropStage").style.display = "none";
   document.getElementById("quadGrid").style.display = "none";
-};
+
+  if(window.JSZip){
+    // 4枚を1つのzipにまとめて1回でダウンロード(ブラウザの複数DLブロックを回避)
+    const zip = new JSZip();
+    blobs.forEach(b=> zip.file(b.name, b.blob));
+    const out = await zip.generateAsync({type:"blob"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(out);
+    a.download = "weapon_" + curType + "_" + curMat + (flip ? "_flip" : "") + ".zip";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+    toast(curType + "×" + curMat + (flip ? "(反転)" : "") + " A〜D をzipで保存しました");
+  } else {
+    // JSZipが無い時のみ1枚ずつ(オフライン用フォールバック)
+    for(let i=0; i<blobs.length; i++){
+      const b = blobs[i];
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b.blob);
+      a.download = b.name;
+      document.body.appendChild(a);
+      a.click();
+      await new Promise(r=>setTimeout(r, 500));
+      URL.revokeObjectURL(a.href); a.remove();
+    }
+    toast("A〜D を1枚ずつ保存しました");
+  }
+}
 
 // 与えられたcanvasに、現在のスライダー強さで背景透過を適用して新canvasを返す
 function applyMatteTo(srcCanvas){
