@@ -155,6 +155,11 @@
       <input type="range" id="matteThresh" min="10" max="90" value="40">
       <span id="matteThreshVal">40</span>
     </div>
+    <div class="row2 mt">
+      <button class="btn small" id="pickBgBtn">背景を直接タップで指定</button>
+      <button class="btn small" id="autoBgBtn">自動計測に戻す</button>
+    </div>
+    <p class="note" id="pickBgNote">四隅の自動計測がズレる時(武器が隅まで張り出している時など)はこちらが確実です。ボタンを押してから、上のプレビュー画像の背景部分を1回タップしてください。</p>
     <p class="note">縁がガタガタ/削れすぎる時はスライダーで調整。おかしければ「やり直す」で選択に戻れます。</p>
     <div class="row2 mt">
       <button class="btn small" id="matteRedoBtn">やり直す</button>
@@ -439,9 +444,15 @@ function sampleCorner(data, w, h, cx, cy, size){
   }
   return n ? {r:r/n, g:g/n, b:b/n} : {r:200,g:200,b:200};
 }
+let manualBg = null; // {r,g,b} 手動指定した背景色。nullなら自動(四隅サンプリング)
+let pickMode = false;
+let lastSrcCanvas = null; // 直近のrenderMatteで使ったsrcCanvasForRead(タップ色取得用)
+
 function openMatteStage(){
   document.getElementById("matteStage").style.display = "block";
   document.getElementById("flipToggle").checked = false;
+  manualBg = null; pickMode = false;
+  document.getElementById("pickBgNote").textContent = "四隅の自動計測がズレる時(武器が隅まで張り出している時など)はこちらが確実です。ボタンを押してから、上のプレビュー画像の背景部分を1回タップしてください。";
   const w = cropCanvas.width, h = cropCanvas.height;
   const mcv = document.getElementById("matteCanvas");
   mcv.width = w; mcv.height = h;
@@ -460,6 +471,7 @@ function renderMatte(){
     fctx.drawImage(cropCanvas, 0, 0);
     srcCanvasForRead = fc;
   }
+  lastSrcCanvas = srcCanvasForRead;
   const srcCtx = srcCanvasForRead.getContext("2d");
   const srcData = srcCtx.getImageData(0,0,w,h);
   const on = document.getElementById("matteToggle").checked;
@@ -468,18 +480,25 @@ function renderMatte(){
 
   const out = new ImageData(new Uint8ClampedArray(srcData.data), w, h);
   if(on){
-    const size = Math.max(2, Math.floor(Math.min(w,h)*0.04));
-    const corners = [
-      sampleCorner(srcData.data, w, h, 0, 0, size),
-      sampleCorner(srcData.data, w, h, w-size, 0, size),
-      sampleCorner(srcData.data, w, h, 0, h-size, size),
-      sampleCorner(srcData.data, w, h, w-size, h-size, size)
-    ];
-    const bg = {
-      r: corners.reduce((s,c)=>s+c.r,0)/4,
-      g: corners.reduce((s,c)=>s+c.g,0)/4,
-      b: corners.reduce((s,c)=>s+c.b,0)/4
-    };
+    let bg;
+    if(manualBg){
+      bg = manualBg;
+    } else {
+      const size = Math.max(2, Math.floor(Math.min(w,h)*0.04));
+      const corners = [
+        sampleCorner(srcData.data, w, h, 0, 0, size),
+        sampleCorner(srcData.data, w, h, w-size, 0, size),
+        sampleCorner(srcData.data, w, h, 0, h-size, size),
+        sampleCorner(srcData.data, w, h, w-size, h-size, size)
+      ];
+      // 単純平均ではなく、チャンネルごとの中央値を使う(隅に武器が張り出して汚染された1〜2点に引きずられないため)
+      const med = (arr)=>{ const s=[...arr].sort((a,b)=>a-b); return (s[1]+s[2])/2; };
+      bg = {
+        r: med(corners.map(c=>c.r)),
+        g: med(corners.map(c=>c.g)),
+        b: med(corners.map(c=>c.b))
+      };
+    }
     const t0 = thresh * 1.8;
     const t1 = t0 + 22;
     const d = out.data;
@@ -500,6 +519,27 @@ function onThreshChange(){
   try{ localStorage.setItem("sl_matte_thresh", v); }catch(e){}
   renderMatte();
 }
+document.getElementById("pickBgBtn").onclick = ()=>{
+  pickMode = true;
+  document.getElementById("pickBgNote").textContent = "→ 上のプレビュー画像の「背景っぽい部分」を1回タップしてください。";
+};
+document.getElementById("autoBgBtn").onclick = ()=>{
+  manualBg = null; pickMode = false;
+  document.getElementById("pickBgNote").textContent = "自動計測(中央値方式)に戻しました。";
+  renderMatte();
+};
+document.getElementById("matteCanvas").addEventListener("click",(e)=>{
+  if(!pickMode || !lastSrcCanvas) return;
+  const rect = e.target.getBoundingClientRect();
+  const cv = document.getElementById("matteCanvas");
+  const px = Math.floor((e.clientX - rect.left) / rect.width * cv.width);
+  const py = Math.floor((e.clientY - rect.top) / rect.height * cv.height);
+  const d = lastSrcCanvas.getContext("2d").getImageData(px, py, 1, 1).data;
+  manualBg = {r:d[0], g:d[1], b:d[2]};
+  pickMode = false;
+  document.getElementById("pickBgNote").textContent = "背景色を指定しました(RGB " + d[0] + "," + d[1] + "," + d[2] + ")。「自動計測に戻す」でリセットできます。";
+  renderMatte();
+});
 document.getElementById("matteThresh").oninput = onThreshChange;
 document.getElementById("matteThresh").onchange = onThreshChange;
 try{
