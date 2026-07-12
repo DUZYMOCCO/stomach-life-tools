@@ -157,7 +157,29 @@
       <input type="range" id="matteThresh" min="10" max="90" value="40">
       <span id="matteThreshVal">40</span>
     </div>
-    <p class="note">背景と似た色は全体的に透過されます。縁に色が残る時はスライダーを右へ、消えすぎる時は左へ。</p>
+    <p class="note">背景のマゼンタ(#FF00FF)だけを消します。武器の中の似た色は消えません。縁にピンクが残る時はスライダーを右へ、絵が欠ける時は左へ。</p>
+
+    <div class="slrow mt">
+      <label>外周トリム</label>
+      <input type="range" id="trimPx" min="0" max="12" value="6">
+      <span id="trimPxVal">6</span>
+    </div>
+    <p class="note">4分割の切り出しで残る枠線を消します。通常は6のままでOK。</p>
+
+    <div class="slrow">
+      <label>出力サイズ</label>
+      <select id="outWidth">
+        <option value="0">原寸のまま</option>
+        <option value="128">128px幅(軽い)</option>
+        <option value="256" selected>256px幅(推奨)</option>
+        <option value="512">512px幅(高精細)</option>
+      </select>
+    </div>
+    <p class="note">ゲーム内では十数pxで描画されます。原寸(700px超)のままだと1枚1MBになるので、256px幅を推奨。</p>
+
+    <div id="qualityWarn" style="display:none;margin-top:10px;padding:10px;border-radius:8px;
+      background:#5a2020;border:1px solid #c04040;color:#ffd0d0;font-size:13px;line-height:1.5;"></div>
+
     <div class="row2 mt">
       <button class="btn small" id="matteRedoBtn">やり直す</button>
       <button class="btn small primary" id="matteConfirmBtn">この内容で確定</button>
@@ -217,6 +239,13 @@ function nextUnfilledVariant(t, m){
   return found || "a";
 }
 
+// 背景は「武器に絶対使われない色」= マゼンタで固定する。
+// 灰色背景だと灰色の武器(石・鉄)と色が衝突し、透過時に武器まで消えていた。
+const BG_PROMPT =
+  "The background must be a solid, uniform, pure magenta (#FF00FF) chroma key background.\n" +
+  "The background must be perfectly flat: no shadows, no gradients, no texture, no vignette.\n" +
+  "The weapon itself must NOT contain any magenta, pink, or purple colors.\n";
+
 function promptTail(){
   return document.getElementById("oneShotToggle").checked
     ? "Output ONLY ONE single, large, highly detailed image."
@@ -227,18 +256,19 @@ function buildPrompt(){
   if(curMat === "diamond"){
     return "A single game item icon of " + t[2] + " whose main body is sculpted from\n" +
       "translucent faceted diamond crystal, with sharp geometric facets,\n" +
-      "internal light refraction, prismatic sparkle highlights,\n" +
+      "internal light refraction, sparkle highlights,\n" +
       "and a grip made of dark leather.\n" +
       "2D game art style, clean bold outlines, anime-style cel shading,\n" +
       "the object centered and fully visible,\n" +
-      "plain solid light-gray background, no text, no watermark.\n" +
+      BG_PROMPT +
+      "no text, no watermark.\n" +
       promptTail();
   }
   const m = MATS.find(x=>x[0]===curMat);
   return "A single game item icon of " + t[2] + ",\n" +
     "2D game art style, clean bold outlines, anime-style cel shading,\n" +
     "the object centered and fully visible,\n" +
-    "plain solid light-gray background (for easy background removal),\n" +
+    BG_PROMPT +
     "no text, no watermark, no hands, no character.\n" +
     m[2] + "\n" +
     promptTail();
@@ -408,6 +438,7 @@ async function quadBatchSave(flip){
   const hw = rawImg.width/2, hh = rawImg.height/2;
   const coords = [[0,0],[hw,0],[0,hh],[hw,hh]]; // 左上→右上→左下→右下
   const blobs = []; // {name, blob}
+  const ngList = []; // 透過に問題があったファイル
   for(let i=0; i<coords.length; i++){
     const [sx,sy] = coords[i];
     const variant = VARIANTS[i];
@@ -416,11 +447,16 @@ async function quadBatchSave(flip){
     const cx = c.getContext("2d");
     if(flip){ cx.translate(c.width, 0); cx.scale(-1, 1); }
     cx.drawImage(rawImg, sx, sy, hw, hh, 0, 0, c.width, c.height);
-    const finalC = applyMatteTo(c);
+    const { canvas:finalC, check } = finalizeForSave(c);   // 透過→トリム→縮小
     const nm = "weapon_" + curType + "_" + curMat + "_" + variant + ".png";
+    if(!check.ok) ngList.push("・" + nm + "\n   " + check.reason);
     const blob = await new Promise(r=> finalC.toBlob(r, "image/png"));
     blobs.push({name:nm, blob});
     progress[curType + "_" + curMat + "_" + variant] = true;
+  }
+  if(ngList.length){
+    alert("⚠ 透過に問題がある可能性があります\n\n" + ngList.join("\n") +
+          "\n\nzipは保存しますが、ゲームに入れる前に確認してください。");
   }
   saveProgress();
   refresh();
@@ -455,37 +491,110 @@ async function quadBatchSave(flip){
   }
 }
 
-// 与えられたcanvasに、現在のスライダー強さで背景透過を適用して新canvasを返す
+// ===== v2: マゼンタキー方式の背景透過 =====
+// 背景を「武器に絶対使われない色(マゼンタ)」で生成させることで、
+// 透過を単純な色判定にできる。フラッドフィルは不要
+// (トリガーガードの内側のような『囲まれた背景』もマゼンタなら確実に抜ける)。
+const KEY_RGB = { r:255, g:0, b:255 };
+
+// ピクセルがキーカラー(マゼンタ)にどれだけ近いか。0=無関係, 1=完全一致
+function keyness(r,g,b){
+  // マゼンタらしさ = 赤と青が高く、緑が低い
+  const rb = Math.min(r, b);
+  const score = (rb - g) / 255;
+  return Math.max(0, Math.min(1, score));
+}
+
 function applyMatteTo(srcCanvas){
   const w = srcCanvas.width, h = srcCanvas.height;
-  const srcCtx = srcCanvas.getContext("2d");
-  const srcData = srcCtx.getImageData(0,0,w,h);
+  const ctx = srcCanvas.getContext("2d");
+  const img = ctx.getImageData(0,0,w,h);
+  const d = img.data;
+  // スライダー: 小さいほど「マゼンタっぽい」判定が厳しくなる
   const thresh = parseInt(document.getElementById("matteThresh").value,10) || 40;
-  const out = new ImageData(new Uint8ClampedArray(srcData.data), w, h);
-  const size = Math.max(2, Math.floor(Math.min(w,h)*0.04));
-  const corners = [
-    sampleCorner(srcData.data, w, h, 0, 0, size),
-    sampleCorner(srcData.data, w, h, w-size, 0, size),
-    sampleCorner(srcData.data, w, h, 0, h-size, size),
-    sampleCorner(srcData.data, w, h, w-size, h-size, size)
-  ];
-  const bg = {
-    r: corners.reduce((s,c)=>s+c.r,0)/4,
-    g: corners.reduce((s,c)=>s+c.g,0)/4,
-    b: corners.reduce((s,c)=>s+c.b,0)/4
-  };
-  const t0 = thresh * 1.8, t1 = t0 + 22;
-  const d = out.data;
+  const t0 = 0.15 + (90 - thresh) * 0.004;   // これ以上なら完全に透明
+  const t1 = t0 * 0.45;                       // これ以下なら完全に不透明
+
   for(let i=0; i<d.length; i+=4){
-    const dr = d[i]-bg.r, dg = d[i+1]-bg.g, db = d[i+2]-bg.b;
-    const dist = Math.sqrt(dr*dr+dg*dg+db*db);
-    if(dist < t0){ d[i+3] = 0; }
-    else if(dist < t1){ d[i+3] = Math.round(d[i+3] * ((dist-t0)/(t1-t0))); }
+    const r=d[i], g=d[i+1], b=d[i+2];
+    const k = keyness(r,g,b);
+    if(k >= t0){
+      d[i+3] = 0;                             // 背景 → 透明
+    } else if(k > t1){
+      // 縁のにじみ: 半透明にしつつ、マゼンタ成分を差し引く(デスピル)
+      const ratio = (k - t1) / (t0 - t1);
+      d[i+3] = Math.round(d[i+3] * (1 - ratio));
+      const avg = Math.round((r + b) / 2);
+      const spill = Math.round((avg - g) * ratio);
+      d[i]   = Math.max(0, r - spill);        // 赤を落とす
+      d[i+2] = Math.max(0, b - spill);        // 青を落とす
+    }
   }
+  ctx.putImageData(img, 0, 0);
+
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
-  c.getContext("2d").putImageData(out, 0, 0);
+  c.getContext("2d").putImageData(img, 0, 0);
   return c;
+}
+
+// 外周を数px透明化する(4分割切り出し時に残る枠線を消す)
+function trimEdges(canvas, px){
+  if(px <= 0) return canvas;
+  const w=canvas.width, h=canvas.height;
+  const ctx=canvas.getContext("2d");
+  const img=ctx.getImageData(0,0,w,h); const d=img.data;
+  const clear=(x,y)=>{ d[(y*w+x)*4+3]=0; };
+  for(let k=0;k<px;k++){
+    for(let x=0;x<w;x++){ clear(x,k); clear(x,h-1-k); }
+    for(let y=0;y<h;y++){ clear(k,y); clear(w-1-k,y); }
+  }
+  ctx.putImageData(img,0,0);
+  return canvas;
+}
+
+// 指定した幅に縮小する(0以下なら縮小しない)
+function resizeCanvas(canvas, targetW){
+  if(targetW <= 0 || canvas.width <= targetW) return canvas;
+  const th = Math.round(canvas.height * targetW / canvas.width);
+  const c = document.createElement("canvas");
+  c.width = targetW; c.height = th;
+  const cx = c.getContext("2d");
+  cx.imageSmoothingEnabled = true;
+  cx.imageSmoothingQuality = "high";
+  cx.drawImage(canvas, 0, 0, targetW, th);
+  return c;
+}
+
+// 透過が成功しているか判定する
+function checkTransparency(canvas){
+  const w=canvas.width, h=canvas.height;
+  const d=canvas.getContext("2d").getImageData(0,0,w,h).data;
+  let clear=0, magentaLeft=0;
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3] < 10){ clear++; continue; }
+    if(keyness(d[i],d[i+1],d[i+2]) > 0.30) magentaLeft++;   // 消し残ったマゼンタ
+  }
+  const total = w*h;
+  const ratio = clear/total;
+  if(magentaLeft/total > 0.02)
+    return {ok:false, reason:"マゼンタの背景が消え残っています(スライダーを右へ)"};
+  if(ratio < 0.25)
+    return {ok:false, reason:"背景が消えていません(マゼンタ背景で生成されていない可能性)"};
+  if(ratio > 0.95)
+    return {ok:false, reason:"消しすぎです。絵がほとんど残っていません(スライダーを左へ)"};
+  return {ok:true, reason:""};
+}
+
+// 保存用の最終canvasを作る(透過 → トリム → チェック → 縮小)
+function finalizeForSave(srcCanvas){
+  let c = applyMatteTo(srcCanvas);
+  const trim = parseInt(document.getElementById("trimPx").value,10) || 0;
+  c = trimEdges(c, trim);
+  const check = checkTransparency(c);          // 縮小前に判定する
+  const outW = parseInt(document.getElementById("outWidth").value,10) || 0;
+  c = resizeCanvas(c, outW);
+  return { canvas:c, check };
 }
 document.getElementById("quadBtn").onclick = ()=>{
   const g = document.getElementById("quadGrid");
@@ -595,16 +704,36 @@ function onThreshChange(){
 }
 document.getElementById("matteThresh").oninput = onThreshChange;
 document.getElementById("matteThresh").onchange = onThreshChange;
+document.getElementById("trimPx").oninput = ()=>{
+  document.getElementById("trimPxVal").textContent = document.getElementById("trimPx").value;
+};
 document.getElementById("matteRedoBtn").onclick = ()=>{
   document.getElementById("matteStage").style.display = "none";
   openCropStage();
 };
 document.getElementById("matteConfirmBtn").onclick = ()=>{
+  // matteCanvasは既に透過済みなので、ここではトリム→チェック→縮小のみ行う
   const w = cropCanvas.width, h = cropCanvas.height;
   const src = document.getElementById("matteCanvas");
-  const c = document.createElement("canvas");
+  let c = document.createElement("canvas");
   c.width = w; c.height = h;
   c.getContext("2d").drawImage(src, 0, 0);
+
+  const trim = parseInt(document.getElementById("trimPx").value,10) || 0;
+  c = trimEdges(c, trim);
+  const check = checkTransparency(c);
+  const warn = document.getElementById("qualityWarn");
+  if(!check.ok){
+    warn.textContent = "⚠ " + check.reason;
+    warn.style.display = "block";
+    if(!confirm("透過に問題がある可能性があります:\n\n" + check.reason +
+                "\n\nこのまま進めますか?")) return;
+  } else {
+    warn.style.display = "none";
+  }
+  const outW = parseInt(document.getElementById("outWidth").value,10) || 0;
+  c = resizeCanvas(c, outW);
+
   finalCanvas = c;
   document.getElementById("matteStage").style.display = "none";
   showFinalPreview();
