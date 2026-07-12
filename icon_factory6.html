@@ -69,8 +69,9 @@
 
   #cropStage,#matteStage{display:none;margin-top:12px;}
   #cropWrap{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    display:flex;justify-content:center;
     background:repeating-conic-gradient(#2c343d 0% 25%, #222932 0% 50%) 0 0/14px 14px;}
-  #cropCanvas{display:block;width:100%;touch-action:none;}
+  #cropCanvas{display:block;touch-action:none;}
   #matteWrap{border:1px solid var(--line);border-radius:12px;overflow:hidden;
     background:repeating-conic-gradient(#2c343d 0% 25%, #222932 0% 50%) 0 0/14px 14px;
     display:flex;justify-content:center;}
@@ -383,8 +384,16 @@ function openCropStage(){
   stage.style.display = "block";
   const wrap = document.getElementById("cropWrap");
   const cv = document.getElementById("cropCanvas");
-  const cssW = wrap.clientWidth || 320;
-  const cssH = Math.min(360, cssW * (rawImg.height/rawImg.width));
+  // 【修正】高さを360pxで頭打ちにすると、幅はそのままなので画像が横に潰れていた。
+  //   高さの上限に合わせて幅も縮め、アスペクト比を必ず保つ。
+  const maxH = 420;
+  const ratio = rawImg.height / rawImg.width;
+  let cssW = wrap.clientWidth || 320;
+  let cssH = cssW * ratio;
+  if(cssH > maxH){                 // 高さが上限を超えるなら、幅の方を縮める
+    cssH = maxH;
+    cssW = cssH / ratio;
+  }
   cropDisp.scale = cssW / rawImg.width;
   cropDisp.cw = cssW; cropDisp.ch = cssH;
   const dpr = window.devicePixelRatio || 1;
