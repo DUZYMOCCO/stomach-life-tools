@@ -123,6 +123,16 @@
     <button class="btn primary" id="cutBtn">切り出す</button>
   </div>
 
+  <div class="bar" id="keyBar" style="flex-wrap:wrap;gap:8px;">
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+      <input type="checkbox" id="keyToggle" checked>
+      マゼンタ背景を消す
+    </label>
+    <input type="range" id="keyStrength" min="10" max="90" value="40" style="flex:1;min-width:90px;">
+    <span id="keyStrengthVal" style="font-size:13px;color:var(--dim);min-width:22px;">40</span>
+    <button class="btn small" id="promptBtn">生成プロンプト</button>
+  </div>
+
   <div id="partsBar">
     <div id="partsHead">
       <span id="partsCount">パーツ: 0</span>
@@ -207,6 +217,26 @@
     <button class="btn primary" id="helpClose" style="width:100%">閉じる</button>
   </div>
 </div>
+<div id="promptModal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
+  align-items:flex-end;z-index:13;">
+  <div style="background:var(--panel);width:100%;border-radius:16px 16px 0 0;padding:16px 16px 30px;
+    max-height:80vh;overflow-y:auto;">
+    <h2 style="font-size:16px;margin-bottom:8px;">Gemini用プロンプト</h2>
+    <p style="font-size:13px;color:var(--dim);line-height:1.6;margin-bottom:10px;">
+      背景をマゼンタ(#FF00FF)で描かせると、切り出しが劇的に楽になります。<br>
+      囲みが多少はみ出しても背景が自動で消えるので、<b>ラフに囲んで大丈夫</b>です。<br>
+      灰色や白の背景だと、キャラの服・肌の色と衝突して本体まで消えてしまいます。
+    </p>
+    <textarea id="promptText" readonly style="width:100%;height:160px;background:var(--panel2);
+      border:1px solid var(--line);border-radius:10px;color:var(--text);padding:10px;
+      font-size:12px;line-height:1.5;resize:vertical;"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn primary" id="promptCopy" style="flex:1;">コピー</button>
+      <button class="btn" id="promptClose" style="flex:1;">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -445,9 +475,74 @@ document.getElementById("cutBtn").onclick = ()=>{
   points.forEach((p,i)=>{ i ? cx.lineTo(p.x-dx, p.y-dy) : cx.moveTo(p.x-dx, p.y-dy); });
   cx.closePath(); cx.clip();
   cx.drawImage(img, -dx, -dy);
+
+  // 【v2】囲みの中に残ったマゼンタ背景を消す(囲みがラフでも背景が残らない)
+  if(document.getElementById("keyToggle").checked){
+    applyMagentaKey(c);
+    const chk = checkMagentaLeft(c);
+    if(!chk.ok){
+      if(!confirm("⚠ " + chk.reason + "\n\nこのまま切り出しますか?")) return;
+    }
+  }
+
   pendingCanvas = c;
   openModal();
 };
+
+// ===== v2: マゼンタキー背景透過 =====
+// 背景を「キャラに絶対使われない色(マゼンタ)」で生成させることで、
+// 囲みが多少はみ出しても背景が自動で消える。
+// 灰色/白背景だと、キャラの服や肌の色と衝突して本体まで消えてしまう。
+
+// マゼンタらしさ(0=無関係, 1=完全一致)。赤と青が高く緑が低いほどマゼンタ
+function keyness(r,g,b){
+  const rb = Math.min(r, b);
+  return Math.max(0, Math.min(1, (rb - g) / 255));
+}
+
+function applyMagentaKey(canvas){
+  const w = canvas.width, h = canvas.height;
+  const ctx = canvas.getContext("2d");
+  const imgd = ctx.getImageData(0,0,w,h);
+  const d = imgd.data;
+  const strength = parseInt(document.getElementById("keyStrength").value,10) || 40;
+  const t0 = 0.15 + (90 - strength) * 0.004;   // これ以上なら完全に透明
+  const t1 = t0 * 0.45;                         // これ以下なら完全に不透明
+
+  for(let i=0; i<d.length; i+=4){
+    if(d[i+3] === 0) continue;                  // 囲みの外は既に透明
+    const r=d[i], g=d[i+1], b=d[i+2];
+    const k = keyness(r,g,b);
+    if(k >= t0){
+      d[i+3] = 0;                               // 背景 → 透明
+    } else if(k > t1){
+      // 縁のにじみ: 半透明にしつつ、マゼンタ成分を差し引く(デスピル)
+      const ratio = (k - t1) / (t0 - t1);
+      d[i+3] = Math.round(d[i+3] * (1 - ratio));
+      const avg = Math.round((r + b) / 2);
+      const spill = Math.round((avg - g) * ratio);
+      d[i]   = Math.max(0, r - spill);
+      d[i+2] = Math.max(0, b - spill);
+    }
+  }
+  ctx.putImageData(imgd, 0, 0);
+  return canvas;
+}
+
+// 切り出した結果にマゼンタが残っていないか確認する
+function checkMagentaLeft(canvas){
+  const w=canvas.width, h=canvas.height;
+  const d=canvas.getContext("2d").getImageData(0,0,w,h).data;
+  let solid=0, magenta=0;
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3] < 10) continue;
+    solid++;
+    if(keyness(d[i],d[i+1],d[i+2]) > 0.30) magenta++;
+  }
+  if(solid === 0) return {ok:false, reason:"中身が空です(全部透明になりました)"};
+  if(magenta/solid > 0.03) return {ok:false, reason:"マゼンタの背景が消え残っています(強さを上げてください)"};
+  return {ok:true, reason:""};
+}
 
 // ===== パーツ名モーダル =====
 const PRESETS = [
@@ -716,6 +811,42 @@ function toast(msg){
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=> t.style.opacity = 0, 2200);
 }
+
+// ===== v2: マゼンタ透過まわりのイベント =====
+const GEMINI_PROMPT =
+"A full-body game character sprite, standing in a neutral T-pose, side view.\n" +
+"2D game art style, clean bold outlines, anime-style cel shading.\n" +
+"Each body part (head, torso, arms, hands, legs, feet) must be clearly separated\n" +
+"and fully visible, with no overlapping limbs, so the parts can be cut out individually.\n" +
+"\n" +
+"The background must be a solid, uniform, pure magenta (#FF00FF) chroma key background.\n" +
+"The background must be perfectly flat: no shadows, no gradients, no texture, no vignette.\n" +
+"The character must NOT contain any magenta, pink, or purple colors.\n" +
+"\n" +
+"No text, no watermark, no ground shadow.";
+
+document.getElementById("keyStrength").oninput = ()=>{
+  document.getElementById("keyStrengthVal").textContent =
+    document.getElementById("keyStrength").value;
+};
+document.getElementById("promptBtn").onclick = ()=>{
+  document.getElementById("promptText").value = GEMINI_PROMPT;
+  document.getElementById("promptModal").style.display = "flex";
+};
+document.getElementById("promptClose").onclick = ()=>{
+  document.getElementById("promptModal").style.display = "none";
+};
+document.getElementById("promptCopy").onclick = async ()=>{
+  const txt = document.getElementById("promptText").value;
+  try{
+    await navigator.clipboard.writeText(txt);
+    toast("プロンプトをコピーしました");
+  }catch(e){
+    const box = document.getElementById("promptText");
+    box.select(); document.execCommand("copy");
+    toast("プロンプトをコピーしました");
+  }
+};
 
 resize();
 </script>
