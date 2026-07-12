@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ストマックライフ 素材取り込みツール</title>
+<style>
+:root{
+  --bg:#1c1a16; --panel:#26231d; --panel2:#2e2a22; --line:#3c372c;
+  --text:#ece6d4; --sub:#a89f88; --acid:#b9c736; --acid-dk:#8a9522;
+  --flesh:#d0705f; --focus:#e4ef7a;
+  --radius:10px; --mono:"Consolas","Courier New",monospace;
+  --jp:"Hiragino Maru Gothic ProN","BIZ UDGothic","Yu Gothic UI","Meiryo",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--jp);font-size:14px;line-height:1.6;min-height:100vh}
+header{padding:14px 20px;border-bottom:2px solid var(--acid);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+header h1{font-size:18px;font-weight:600;letter-spacing:.04em}
+header h1 .grip{color:var(--acid)}
+header p{color:var(--sub);font-size:12px}
+main{display:grid;grid-template-columns:210px minmax(0, 1fr) 280px;gap:0;min-height:calc(100vh - 60px)}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+aside,section{padding:14px}
+aside{background:var(--panel);border-right:1px solid var(--line)}
+aside.right{border-right:none;border-left:1px solid var(--line)}
+h2{font-size:12px;color:var(--acid);letter-spacing:.12em;margin:14px 0 8px;font-weight:600}
+h2:first-child{margin-top:0}
+.drop{border:2px dashed var(--line);border-radius:var(--radius);padding:18px 10px;text-align:center;color:var(--sub);cursor:pointer;transition:border-color .15s,color .15s}
+.drop.on,.drop:hover{border-color:var(--acid);color:var(--acid)}
+.drop input{display:none}
+#frameList{list-style:none;margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow-y:auto}
+#frameList li{display:flex;align-items:center;gap:8px;padding:6px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--panel2)}
+#frameList li.active{border-color:var(--acid)}
+#frameList img{width:34px;height:34px;object-fit:contain;background:
+  repeating-conic-gradient(#555 0 25%,#777 0 50%) 0 0/12px 12px;border-radius:4px;image-rendering:pixelated}
+#frameList .nm{flex:1;font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#frameList .ops{display:flex;gap:2px}
+#frameList .ops button{background:none;border:none;color:var(--sub);cursor:pointer;font-size:12px;padding:2px 4px}
+#frameList .ops button:hover{color:var(--flesh)}
+.stage{display:flex;flex-direction:column;gap:10px}
+.stagebar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--sub)}
+.canvasWrap{flex:1;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:var(--radius);overflow:auto;min-height:340px;position:relative}
+.canvasWrap.bg-checker{background:repeating-conic-gradient(#4a4a4a 0 25%,#6b6b6b 0 50%) 0 0/20px 20px}
+.canvasWrap.bg-dark{background:#141414}
+.canvasWrap.bg-light{background:#e8e8e8}
+.canvasWrap.bg-game{background:#3d2430}
+#view{image-rendering:pixelated;cursor:crosshair}
+.hint{font-size:11px;color:var(--sub)}
+.hint b{color:var(--acid);font-weight:600}
+label.row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0;font-size:12px;color:var(--sub)}
+input[type=range]{flex:1;accent-color:var(--acid)}
+.val{font-family:var(--mono);color:var(--text);min-width:34px;text-align:right;font-size:12px}
+.keys{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.keys .sw{width:26px;height:26px;border-radius:6px;border:1px solid var(--line);cursor:pointer;position:relative}
+.keys .sw::after{content:"×";position:absolute;top:-7px;right:-5px;font-size:11px;color:var(--flesh);opacity:0;transition:opacity .1s}
+.keys .sw:hover::after{opacity:1}
+.keys .none{color:var(--sub);font-size:11px;padding:4px 0}
+button.b{width:100%;padding:9px 10px;margin:5px 0;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer;font-family:var(--jp);font-size:13px;transition:border-color .12s,background .12s}
+button.b:hover{border-color:var(--acid)}
+button.b.primary{background:var(--acid);border-color:var(--acid);color:#1c1a16;font-weight:600}
+button.b.primary:hover{background:var(--focus)}
+button.b:disabled{opacity:.35;cursor:default}
+button:focus-visible,.drop:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.seg{display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:4px 0}
+.seg button{flex:1;padding:6px 4px;background:var(--panel2);border:none;color:var(--sub);cursor:pointer;font-size:11px;font-family:var(--jp)}
+.seg button.on{background:var(--acid);color:#1c1a16;font-weight:600}
+.godot{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;color:var(--sub);margin-top:8px}
+.godot b{color:var(--acid);font-family:var(--mono)}
+.toggle{display:flex;align-items:center;gap:8px;margin:8px 0;cursor:pointer;font-size:12px;color:var(--sub)}
+.toggle input{accent-color:var(--acid);width:16px;height:16px}
+footer{padding:10px 20px;border-top:1px solid var(--line);color:var(--sub);font-size:11px}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--acid);color:#1c1a16;padding:8px 18px;border-radius:20px;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="grip">✊</span> ストマックライフ 素材取り込みツール</h1>
+  <p>チェッカー・単色背景の透過化 → スプライトシート組み立て → Godotへ</p>
+</header>
+<main>
+  <aside>
+    <h2>1. 画像を入れる</h2>
+    <label class="drop" id="drop" tabindex="0">
+      ここにドラッグ&ドロップ<br>またはクリックで選択<br><span style="font-size:10px">(複数可・PNG/JPG/WebP)</span>
+      <input type="file" id="file" accept="image/*" multiple>
+    </label>
+    <ul id="frameList"></ul>
+    <div class="hint" id="frameHint" style="margin-top:8px">▲▼でシートの並び順を変更</div>
+  </aside>
+
+  <section class="stage">
+    <div class="stagebar">
+      <span>プレビュー背景:</span>
+      <div class="seg" style="flex:0 0 auto;width:240px">
+        <button data-bg="checker" class="on">市松</button>
+        <button data-bg="dark">暗</button>
+        <button data-bg="light">明</button>
+        <button data-bg="game">胃の中</button>
+      </div>
+      <label class="row" style="flex:1;min-width:160px">拡大
+        <input type="range" id="zoom" min="0.1" max="8" value="2" step="0.1">
+        <span class="val" id="zoomVal">2x</span>
+      </label>
+      <button class="b" id="fitBtn" style="width:auto;flex:0 0 auto;padding:6px 12px;margin:0">画面に合わせる</button>
+    </div>
+    <div class="canvasWrap bg-checker" id="wrap">
+      <canvas id="view"></canvas>
+    </div>
+    <div class="hint">画像の<b>背景部分をクリック</b>すると、その色が除去キーに追加される(複数登録可)。市松模様なら明・暗の2色をそれぞれクリック。</div>
+  </section>
+
+  <aside class="right">
+    <h2>2. 背景除去</h2>
+    <button class="b primary" id="magentaBtn">マゼンタ背景を一括除去(icon factory方式)</button>
+    <div class="hint" style="margin-bottom:8px">icon factory v2で生成した素材はこれ1発。市松・灰色背景の旧素材は下の手動キー方式で。</div>
+    <div class="hint">除去キー(クリックで削除):</div>
+    <div class="keys" id="keys"><span class="none">未登録 — 画像の背景をクリック</span></div>
+    <label class="row">許容差
+      <input type="range" id="tol" min="0" max="140" value="45">
+      <span class="val" id="tolVal">45</span>
+    </label>
+    <label class="row">輪郭ソフト
+      <input type="range" id="soft" min="0" max="80" value="30">
+      <span class="val" id="softVal">30</span>
+    </label>
+    <label class="toggle"><input type="checkbox" id="floodMode" checked>外周につながる部分だけ除去(キャラ内部の同色を守る)</label>
+    <button class="b" id="autoKey">四隅の色を自動登録</button>
+    <button class="b primary" id="applyOne">このコマに適用</button>
+    <button class="b" id="applyAll">全コマに一括適用</button>
+    <button class="b" id="resetOne">このコマを元に戻す</button>
+
+    <h2>3. 防具用: グレースケール化</h2>
+    <div class="hint">防具の下絵は無彩色で保存する(素材色はゲーム側で乗算)。書き出し前に必ずかける。</div>
+    <button class="b" id="grayOne">このコマをグレースケール化</button>
+    <button class="b" id="grayAll">全コマをグレースケール化</button>
+    <div class="godot" id="lumInfo" style="display:none"></div>
+
+    <h2>4. 素材色プレビュー(表示のみ)</h2>
+    <div class="hint">色を乗せて読めるかの検品。<b>書き出しには乗らない。</b>質感(マット/金属/発光)はバンドに応じて自動で重なる。</div>
+    <div class="keys" id="matChips"></div>
+
+    <h2>5. 書き出し</h2>
+    <button class="b" id="exportOne">このコマを透過PNG保存</button>
+    <button class="b" id="exportAll">全コマを個別に保存</button>
+
+    <h2>6. スプライトシート</h2>
+    <label class="toggle"><input type="checkbox" id="trim" checked>共通余白を自動トリム(位置関係は維持)</label>
+    <label class="row">列数
+      <input type="range" id="cols" min="1" max="12" value="4">
+      <span class="val" id="colsVal">4</span>
+    </label>
+    <button class="b primary" id="exportSheet">シートを結合して保存</button>
+    <div class="godot" id="godotInfo">シートを書き出すと、Godotに設定する値がここに出る。</div>
+  </aside>
+</main>
+<footer>
+  完全ローカル動作(画像はどこにも送信されない)。このHTMLファイルを保存しておけば、いつでもブラウザで開いて使える。
+</footer>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const state={frames:[],active:-1,keys:[],zoom:2,previewMat:-1};
+
+// 素材色テーブル(9素材)。※色値はゲーム側 ItemData の素材色と要同期。
+// band: matte=日用品 / metal=文明 / glow=超科学(質感オーバーレイの自動選択に使う)
+const MATERIALS=[
+  {id:"stone",    jp:"石",       color:[138,134,128], band:"matte"},
+  {id:"paper",    jp:"紙",       color:[232,226,208], band:"matte"},
+  {id:"wood",     jp:"木",       color:[164,116,72],  band:"matte"},
+  {id:"leather",  jp:"革",       color:[122,82,54],   band:"matte"},
+  {id:"copper",   jp:"銅",       color:[196,120,70],  band:"metal"},
+  {id:"iron",     jp:"鉄",       color:[136,140,148], band:"metal"},
+  {id:"titanium", jp:"チタン",   color:[168,190,204], band:"glow"},
+  {id:"tungsten", jp:"タングステン", color:[92,98,110], band:"glow"},
+  {id:"diamond",  jp:"ダイヤ",   color:[190,226,236], band:"glow"}
+];
+
+// ---------- ユーティリティ ----------
+function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._tm);t._tm=setTimeout(()=>t.classList.remove("show"),1800);}
+function makeCanvas(w,h){const c=document.createElement("canvas");c.width=w;c.height=h;return c;}
+function cloneCanvas(src){const c=makeCanvas(src.width,src.height);c.getContext("2d").drawImage(src,0,0);return c;}
+
+// ---------- 読み込み ----------
+const drop=$("drop"),fileIn=$("file");
+drop.addEventListener("click",()=>fileIn.click());
+drop.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" ")fileIn.click();});
+drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("on");});
+drop.addEventListener("dragleave",()=>drop.classList.remove("on"));
+drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("on");loadFiles(e.dataTransfer.files);});
+fileIn.addEventListener("change",()=>{loadFiles(fileIn.files);fileIn.value="";});
+
+function loadFiles(list){
+  [...list].forEach(f=>{
+    if(!f.type.startsWith("image/"))return;
+    const img=new Image();
+    img.onload=()=>{
+      const c=makeCanvas(img.naturalWidth,img.naturalHeight);
+      c.getContext("2d").drawImage(img,0,0);
+      const isFirst=state.active<0;
+      state.frames.push({name:f.name.replace(/\.[^.]+$/,""),orig:c,proc:null});
+      if(state.active<0)state.active=0;
+      renderList();draw();updateLumInfo();
+      if(isFirst)fitZoom();
+      toast(f.name+" を読み込んだ");
+    };
+    img.src=URL.createObjectURL(f);
+  });
+}
+
+// ---------- コマ一覧 ----------
+function renderList(){
+  const ul=$("frameList");ul.innerHTML="";
+  state.frames.forEach((fr,i)=>{
+    const li=document.createElement("li");
+    if(i===state.active)li.classList.add("active");
+    const th=document.createElement("img");
+    th.src=(fr.proc||fr.orig).toDataURL();
+    const nm=document.createElement("span");nm.className="nm";nm.textContent=fr.name;
+    const ops=document.createElement("span");ops.className="ops";
+    const mk=(t,fn,label)=>{const b=document.createElement("button");b.textContent=t;b.title=label;b.setAttribute("aria-label",label);b.addEventListener("click",e=>{e.stopPropagation();fn();});return b;};
+    ops.append(
+      mk("▲",()=>{if(i>0){[state.frames[i-1],state.frames[i]]=[state.frames[i],state.frames[i-1]];if(state.active===i)state.active=i-1;else if(state.active===i-1)state.active=i;renderList();draw();}},"上へ"),
+      mk("▼",()=>{if(i<state.frames.length-1){[state.frames[i+1],state.frames[i]]=[state.frames[i],state.frames[i+1]];if(state.active===i)state.active=i+1;else if(state.active===i+1)state.active=i;renderList();draw();}},"下へ"),
+      mk("×",()=>{state.frames.splice(i,1);if(state.active>=state.frames.length)state.active=state.frames.length-1;renderList();draw();},"削除")
+    );
+    li.append(th,nm,ops);
+    li.addEventListener("click",()=>{state.active=i;renderList();draw();updateLumInfo();});
+    ul.appendChild(li);
+  });
+}
+
+// ---------- 表示 ----------
+const view=$("view"),wrap=$("wrap");
+function draw(){
+  const fr=state.frames[state.active];
+  if(!fr){view.width=0;view.height=0;return;}
+  const src=fr.proc||fr.orig;
+  view.width=src.width;view.height=src.height;
+  const vctx=view.getContext("2d");
+  if(state.previewMat>=0){
+    vctx.drawImage(tintedPreview(src,MATERIALS[state.previewMat]),0,0);
+  }else{
+    vctx.drawImage(src,0,0);
+  }
+  view.style.width=(src.width*state.zoom)+"px";
+  view.style.height=(src.height*state.zoom)+"px";
+}
+
+// ---------- 素材色乗算プレビュー(表示専用・元データに触れない) ----------
+function tintedPreview(src,mat){
+  const w=src.width,h=src.height;
+  const c=makeCanvas(w,h);
+  const ctx=c.getContext("2d");
+  ctx.drawImage(src,0,0);
+  const im=ctx.getImageData(0,0,w,h);
+  const d=im.data;
+  const [mr,mg,mb]=mat.color;
+  for(let p=0;p<w*h;p++){
+    const i=p*4;
+    if(d[i+3]===0)continue;
+    // 乗算(Godot側の modulate と同じ計算)
+    let r=d[i]*mr/255, g=d[i+1]*mg/255, b=d[i+2]*mb/255;
+    if(mat.band==="metal"){
+      // コントラスト強め=金属の締まり
+      r=(r-128)*1.25+132; g=(g-128)*1.25+132; b=(b-128)*1.25+132;
+    }else if(mat.band==="glow"){
+      // 明部を持ち上げ=内側から光る超科学
+      const lum=(r+g+b)/3;
+      const lift=Math.max(0,(lum-140)/115)*60;
+      r+=lift; g+=lift; b+=lift+8;
+    }
+    d[i]=Math.max(0,Math.min(255,r));
+    d[i+1]=Math.max(0,Math.min(255,g));
+    d[i+2]=Math.max(0,Math.min(255,b));
+  }
+  ctx.putImageData(im,0,0);
+  return c;
+}
+function fmtZoom(z){return (Math.round(z*100)/100)+"x";}
+$("zoom").addEventListener("input",e=>{state.zoom=+e.target.value;$("zoomVal").textContent=fmtZoom(state.zoom);draw();});
+function fitZoom(){
+  const fr=state.frames[state.active];if(!fr)return;
+  const src=fr.proc||fr.orig;
+  const padding=24; // canvasWrapの内側余白分を差し引く
+  const availW=wrap.clientWidth-padding, availH=wrap.clientHeight-padding;
+  if(availW<=0||availH<=0)return;
+  let z=Math.min(availW/src.width, availH/src.height);
+  z=Math.max(0.1, Math.min(8, Math.round(z*100)/100));
+  state.zoom=z;
+  $("zoom").value=z;
+  $("zoomVal").textContent=fmtZoom(z);
+  draw();
+}
+$("fitBtn").addEventListener("click",fitZoom);
+document.querySelectorAll(".seg button").forEach(b=>{
+  b.addEventListener("click",()=>{
+    document.querySelectorAll(".seg button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    wrap.className="canvasWrap bg-"+b.dataset.bg;
+  });
+});
+
+// ---------- 除去キー ----------
+view.addEventListener("click",e=>{
+  const fr=state.frames[state.active];if(!fr)return;
+  const r=view.getBoundingClientRect();
+  const x=Math.floor((e.clientX-r.left)/state.zoom);
+  const y=Math.floor((e.clientY-r.top)/state.zoom);
+  if(x<0||y<0||x>=fr.orig.width||y>=fr.orig.height)return;
+  const d=fr.orig.getContext("2d").getImageData(x,y,1,1).data;
+  addKey([d[0],d[1],d[2]]);
+});
+function addKey(rgb){
+  if(state.keys.some(k=>k[0]===rgb[0]&&k[1]===rgb[1]&&k[2]===rgb[2]))return;
+  state.keys.push(rgb);renderKeys();
+  toast("除去キー追加: rgb("+rgb.join(",")+")");
+}
+function renderKeys(){
+  const box=$("keys");box.innerHTML="";
+  if(!state.keys.length){box.innerHTML='<span class="none">未登録 — 画像の背景をクリック</span>';return;}
+  state.keys.forEach((k,i)=>{
+    const sw=document.createElement("div");sw.className="sw";
+    sw.style.background=`rgb(${k.join(",")})`;
+    sw.title="クリックで削除";
+    sw.addEventListener("click",()=>{state.keys.splice(i,1);renderKeys();});
+    box.appendChild(sw);
+  });
+}
+$("autoKey").addEventListener("click",()=>{
+  const fr=state.frames[state.active];if(!fr)return toast("画像がない");
+  const ctx=fr.orig.getContext("2d");const w=fr.orig.width,h=fr.orig.height;
+  [[0,0],[w-1,0],[0,h-1],[w-1,h-1]].forEach(([x,y])=>{
+    const d=ctx.getImageData(x,y,1,1).data;addKey([d[0],d[1],d[2]]);
+  });
+});
+$("tol").addEventListener("input",e=>$("tolVal").textContent=e.target.value);
+$("soft").addEventListener("input",e=>$("softVal").textContent=e.target.value);
+$("cols").addEventListener("input",e=>$("colsVal").textContent=e.target.value);
+
+// ---------- 背景除去本体 ----------
+function distSq(d,i,k){const dr=d[i]-k[0],dg=d[i+1]-k[1],db=d[i+2]-k[2];return dr*dr+dg*dg+db*db;}
+function minDist(d,i){let m=Infinity;for(const k of state.keys){const v=distSq(d,i,k);if(v<m)m=v;}return Math.sqrt(m);}
+
+function processFrame(fr){
+  if(!state.keys.length){toast("先に背景をクリックして除去キーを登録");return false;}
+  const w=fr.orig.width,h=fr.orig.height;
+  const c=cloneCanvas(fr.orig);
+  const ctx=c.getContext("2d");
+  const im=ctx.getImageData(0,0,w,h);
+  const d=im.data;
+  const tol=+$("tol").value, soft=+$("soft").value;
+  const N=w*h;
+
+  if($("floodMode").checked){
+    // 外周からのBFS: キー色に近い連結領域のみ透過
+    const mark=new Uint8Array(N);
+    const stack=[];
+    const push=(x,y)=>{const p=y*w+x;if(!mark[p]&&minDist(d,p*4)<=tol+soft){mark[p]=1;stack.push(p);}};
+    for(let x=0;x<w;x++){push(x,0);push(x,h-1);}
+    for(let y=0;y<h;y++){push(0,y);push(w-1,y);}
+    while(stack.length){
+      const p=stack.pop();const x=p%w,y=(p-x)/w;
+      if(x>0)push(x-1,y); if(x<w-1)push(x+1,y);
+      if(y>0)push(x,y-1); if(y<h-1)push(x,y+1);
+    }
+    for(let p=0;p<N;p++){
+      if(!mark[p])continue;
+      const dist=minDist(d,p*4);
+      if(dist<=tol)d[p*4+3]=0;
+      else d[p*4+3]=Math.min(d[p*4+3],Math.round(255*(dist-tol)/Math.max(soft,1)));
+    }
+  }else{
+    // 全域クロマキー
+    for(let p=0;p<N;p++){
+      const dist=minDist(d,p*4);
+      if(dist<=tol)d[p*4+3]=0;
+      else if(dist<=tol+soft)d[p*4+3]=Math.min(d[p*4+3],Math.round(255*(dist-tol)/Math.max(soft,1)));
+    }
+  }
+  ctx.putImageData(im,0,0);
+  fr.proc=c;
+  return true;
+}
+$("applyOne").addEventListener("click",()=>{
+  const fr=state.frames[state.active];if(!fr)return toast("画像がない");
+  if(processFrame(fr)){renderList();draw();updateLumInfo();toast("適用した");}
+});
+$("applyAll").addEventListener("click",()=>{
+  if(!state.frames.length)return toast("画像がない");
+  let ok=0;
+  state.frames.forEach(fr=>{if(processFrame(fr))ok++;});
+  if(ok){renderList();draw();updateLumInfo();toast(ok+"コマに一括適用した");}
+});
+$("resetOne").addEventListener("click",()=>{
+  const fr=state.frames[state.active];if(!fr)return;
+  fr.proc=null;renderList();draw();updateLumInfo();toast("元に戻した");
+});
+
+// ---------- マゼンタ一括除去(icon factory方式) ----------
+$("magentaBtn").addEventListener("click",()=>{
+  if(!state.frames.length)return toast("画像がない");
+  const saveKeys=state.keys, saveFlood=$("floodMode").checked;
+  state.keys=[[255,0,255]];
+  $("floodMode").checked=false; // マゼンタキーは全域方式(囲まれた背景も抜くため)
+  let ok=0;
+  state.frames.forEach(fr=>{if(processFrame(fr))ok++;});
+  state.keys=saveKeys;renderKeys();
+  $("floodMode").checked=saveFlood;
+  if(!ok)return;
+  renderList();draw();updateLumInfo();
+  // 消し残り検品: 不透明画素にマゼンタ近似色が残っていないか
+  const bad=[];
+  state.frames.forEach(fr=>{
+    const src=fr.proc;if(!src)return;
+    const d=src.getContext("2d").getImageData(0,0,src.width,src.height).data;
+    let n=0;
+    for(let p=0;p<src.width*src.height;p++){
+      const i=p*4;
+      if(d[i+3]>40 && d[i]>200 && d[i+2]>200 && d[i+1]<90)n++;
+    }
+    if(n>30)bad.push(fr.name);
+  });
+  toast(bad.length? "⚠ マゼンタ消し残り疑い: "+bad.join(", ")+" — 許容差を上げて再適用を"
+                  : ok+"コマのマゼンタ背景を除去した");
+});
+
+// ---------- グレースケール化(書き出し用・破壊的) ----------
+function toGrayscale(fr){
+  const src=fr.proc||fr.orig;
+  const c=cloneCanvas(src);
+  const ctx=c.getContext("2d");
+  const im=ctx.getImageData(0,0,c.width,c.height);
+  const d=im.data;
+  for(let p=0;p<c.width*c.height;p++){
+    const i=p*4;
+    if(d[i+3]===0)continue;
+    const l=Math.round(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]);
+    d[i]=d[i+1]=d[i+2]=l;
+  }
+  ctx.putImageData(im,0,0);
+  fr.proc=c;
+}
+$("grayOne").addEventListener("click",()=>{
+  const fr=state.frames[state.active];if(!fr)return toast("画像がない");
+  toGrayscale(fr);renderList();draw();updateLumInfo();toast("グレースケール化した");
+});
+$("grayAll").addEventListener("click",()=>{
+  if(!state.frames.length)return toast("画像がない");
+  state.frames.forEach(toGrayscale);
+  renderList();draw();updateLumInfo();toast(state.frames.length+"コマをグレースケール化した");
+});
+
+// ---------- 輝度検品(色を乗せて成立するかの目安) ----------
+function updateLumInfo(){
+  const box=$("lumInfo");
+  const fr=state.frames[state.active];
+  if(!fr){box.style.display="none";return;}
+  const src=fr.proc||fr.orig;
+  const d=src.getContext("2d").getImageData(0,0,src.width,src.height).data;
+  let sum=0,n=0;
+  for(let p=0;p<src.width*src.height;p++){
+    const i=p*4;
+    if(d[i+3]<40)continue;
+    sum+=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];n++;
+  }
+  if(!n){box.style.display="none";return;}
+  const avg=Math.round(sum/n);
+  let warn="";
+  if(avg<70)warn="<br>⚠ <b>暗すぎ</b> — 乗算すると色が沈んで素材が読めない恐れ。明るめに作り直し推奨";
+  else if(avg>215)warn="<br>⚠ <b>明るすぎ</b> — 色は乗るが質感が飛びやすい";
+  box.style.display="block";
+  box.innerHTML="平均輝度: <b>"+avg+"</b> / 255(目安: 90〜190が安全圏)"+warn;
+}
+
+// ---------- 素材色チップ ----------
+(function(){
+  const box=$("matChips");
+  const mkChip=(label,idx,bg,fg)=>{
+    const sw=document.createElement("div");
+    sw.className="sw";
+    sw.style.cssText="width:auto;height:auto;padding:3px 8px;font-size:11px;line-height:1.4;"
+      +"background:"+bg+";color:"+fg+";";
+    sw.textContent=label;
+    sw.title=idx<0?"プレビュー解除":"乗算プレビュー";
+    sw.addEventListener("click",()=>{
+      state.previewMat=idx;
+      [...box.children].forEach(c=>c.style.outline="");
+      sw.style.outline="2px solid var(--focus)";
+      draw();
+    });
+    box.appendChild(sw);
+    return sw;
+  };
+  box.innerHTML="";
+  const off=mkChip("なし",-1,"var(--panel2)","var(--text)");
+  off.style.outline="2px solid var(--focus)";
+  MATERIALS.forEach((m,i)=>{
+    const [r,g,b]=m.color;
+    const fg=(0.299*r+0.587*g+0.114*b)>150?"#1c1a16":"#ece6d4";
+    mkChip(m.jp,i,`rgb(${r},${g},${b})`,fg);
+  });
+})();
+
+// ---------- 書き出し ----------
+function download(canvas,name){
+  const a=document.createElement("a");
+  a.download=name;
+  a.href=canvas.toDataURL("image/png");
+  a.click();
+}
+$("exportOne").addEventListener("click",()=>{
+  const fr=state.frames[state.active];if(!fr)return toast("画像がない");
+  download(fr.proc||fr.orig,fr.name+"_t.png");
+});
+$("exportAll").addEventListener("click",()=>{
+  if(!state.frames.length)return toast("画像がない");
+  state.frames.forEach((fr,i)=>{
+    setTimeout(()=>download(fr.proc||fr.orig,fr.name+"_t.png"),i*350);
+  });
+  toast(state.frames.length+"枚を順に保存中…");
+});
+
+// ---------- スプライトシート ----------
+function unionBBox(){
+  let x0=Infinity,y0=Infinity,x1=-1,y1=-1;
+  for(const fr of state.frames){
+    const src=fr.proc||fr.orig;
+    const im=src.getContext("2d").getImageData(0,0,src.width,src.height).data;
+    for(let y=0;y<src.height;y++)for(let x=0;x<src.width;x++){
+      if(im[(y*src.width+x)*4+3]>0){
+        if(x<x0)x0=x; if(y<y0)y0=y; if(x>x1)x1=x; if(y>y1)y1=y;
+      }
+    }
+  }
+  if(x1<0)return null;
+  return {x:x0,y:y0,w:x1-x0+1,h:y1-y0+1};
+}
+$("exportSheet").addEventListener("click",()=>{
+  if(!state.frames.length)return toast("画像がない");
+  let cw=0,ch=0,crop=null;
+  if($("trim").checked){
+    crop=unionBBox();
+    if(!crop)return toast("透過処理後の絵が空——先に適用を");
+    cw=crop.w;ch=crop.h;
+  }else{
+    for(const fr of state.frames){const s=fr.proc||fr.orig;cw=Math.max(cw,s.width);ch=Math.max(ch,s.height);}
+  }
+  const n=state.frames.length;
+  const cols=Math.min(+$("cols").value,n);
+  const rows=Math.ceil(n/cols);
+  const sheet=makeCanvas(cw*cols,ch*rows);
+  const ctx=sheet.getContext("2d");
+  state.frames.forEach((fr,i)=>{
+    const src=fr.proc||fr.orig;
+    const cx=(i%cols)*cw, cy=Math.floor(i/cols)*ch;
+    if(crop)ctx.drawImage(src,crop.x,crop.y,cw,ch,cx,cy,cw,ch);
+    else ctx.drawImage(src,cx+Math.floor((cw-src.width)/2),cy+Math.floor((ch-src.height)/2));
+  });
+  download(sheet,"spritesheet_"+cols+"x"+rows+".png");
+  $("godotInfo").innerHTML=
+    "Godotでの設定(AnimatedSprite2Dの場合):<br>"+
+    "インスペクター → Sprite Frames → 新規SpriteFrames → 開く →<br>"+
+    "下パネルの「スプライトシートからフレームを追加」でこのPNGを選び、<br>"+
+    "<b>水平: "+cols+"</b> / <b>垂直: "+rows+"</b> を入力 → 使うコマを選択。<br>"+
+    "1コマのサイズ: <b>"+cw+" × "+ch+" px</b>";
+  toast("シートを書き出した("+cols+"×"+rows+")");
+});
+</script>
+</body>
+</html>
