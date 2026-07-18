@@ -255,19 +255,21 @@ let pendingCanvas = null;     // 命名待ちの切り出し結果
 // 主人公リグ(player.tscn)が前提とする、各パーツのキャンバスサイズと配置。
 // この定義に載っているパーツ名で保存すると、入力シートのレイアウトが何であれ、
 // 出力は常にこのキャンバス・この位置に整列される → Godotに上書きするだけでリグに乗る。
-// 数値は body.zip(正しい原器)から実測。パーツを手で直したら再実測して更新すること。
+// 数値は body.zip(13パーツ確定版・G1-2)から実測。パーツを手で直したら再実測して更新すること。
 const RIG_LAYOUT = {
-  "chara_head":        {cw:1024, ch:560, cx:130.5, cy:69.5,  pw:110, ph:124},
-  "chara_torso":       {cw:1024, ch:560, cx:118.5, cy:271.0, pw:180, ph:265},
-  "chara_hip":         {cw:1024, ch:560, cx:129.5, cy:468.0, pw:148, ph:109},
-  "chara_arm_upper_l": {cw:751,  ch:392, cx:357.5, cy:90.5,  pw:52,  ph:154},
-  "chara_arm_upper_r": {cw:819,  ch:448, cx:268.0, cy:102.5, pw:65,  ph:180},
-  "chara_arm_lower_l": {cw:751,  ch:392, cx:359.0, cy:243.0, pw:43,  ph:181},
-  "chara_arm_lower_r": {cw:819,  ch:448, cx:274.0, cy:315.5, pw:57,  ph:214},
-  "chara_leg_upper_l": {cw:819,  ch:560, cx:722.5, cy:145.0, pw:82,  ph:195},
-  "chara_leg_upper_r": {cw:819,  ch:560, cx:586.5, cy:145.0, pw:92,  ph:233},
-  "chara_leg_lower_l": {cw:1024, ch:560, cx:930.5, cy:417.5, pw:116, ph:236},
-  "chara_leg_lower_r": {cw:1024, ch:560, cx:746.0, cy:415.0, pw:141, ph:275},
+  "chara_head": {cw:1024, ch:560, cx:130.5, cy:69.5, pw:110, ph:124},
+  "chara_torso": {cw:1024, ch:560, cx:118.5, cy:271.0, pw:180, ph:265},
+  "chara_hip": {cw:1024, ch:560, cx:129.5, cy:468.0, pw:148, ph:109},
+  "chara_arm_upper_l": {cw:751, ch:392, cx:357.5, cy:90.5, pw:52, ph:154},
+  "chara_arm_upper_r": {cw:819, ch:448, cx:268.0, cy:102.5, pw:65, ph:180},
+  "chara_arm_lower_l": {cw:751, ch:392, cx:359.0, cy:243.0, pw:43, ph:181},
+  "chara_arm_lower_r": {cw:819, ch:448, cx:274.0, cy:315.5, pw:57, ph:214},
+  "chara_leg_upper_l": {cw:819, ch:560, cx:722.5, cy:145.0, pw:82, ph:195},
+  "chara_leg_upper_r": {cw:819, ch:560, cx:586.5, cy:145.0, pw:92, ph:233},
+  "chara_leg_lower_l": {cw:1024, ch:560, cx:929.5, cy:394.0, pw:58, ph:189},
+  "chara_leg_lower_r": {cw:1024, ch:560, cx:93.0, cy:381.0, pw:63, ph:203},
+  "chara_foot_l": {cw:1024, ch:560, cx:935.0, cy:512.0, pw:85, ph:59},
+  "chara_foot_r": {cw:1024, ch:560, cx:752.5, cy:512.0, pw:96, ph:61},
 };
 
 // 切り出したパーツcanvasを、定義キャンバスの定義位置に整列して返す。
