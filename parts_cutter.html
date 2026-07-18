@@ -138,20 +138,8 @@
       <span id="partsCount">パーツ: 0</span>
       <div class="spacer"></div>
       <label id="posKeepLbl"><input type="checkbox" id="posKeep" checked> 位置キープ</label>
+      <label id="posKeepLbl"><input type="checkbox" id="rigAlign" checked> リグ整列</label>
       <button class="btn small" id="saveAllBtn">全部保存</button>
-      <button class="btn small" id="saveTemplateBtn">テンプレ保存</button>
-      <select id="templateSelect" style="background:var(--panel2);color:var(--text);border:1px solid var(--line);
-        border-radius:8px;padding:6px 8px;font-size:12px;"></select>
-      <button class="btn small" id="applyTemplateBtn">テンプレ適用</button>
-      <button class="btn small" id="deleteTemplateBtn">テンプレ削除</button>
-      <button class="btn small" id="exportTemplatesBtn">テンプレ書き出し</button>
-      <button class="btn small" id="importTemplatesBtn">テンプレ読み込み</button>
-      <input type="file" id="templateFileInput" accept="application/json" hidden>
-      <div class="seg" id="tplModeSeg" style="display:none">
-        <button data-tm="individual" class="on">個別</button>
-        <button data-tm="whole">全体</button>
-      </div>
-      <button class="btn small" id="batchCutBtn">一括切り出し</button>
     </div>
     <div id="partsList"></div>
   </div>
@@ -260,11 +248,55 @@ let img = null;               // 元画像 (Image)
 let view = {scale:1, ox:0, oy:0};  // 表示変換
 let mode = "move";
 let points = [];              // 選択ポリゴン(画像座標)
-let parts = [];               // {canvas, name, srcPoints, partName}
+let parts = [];               // {canvas, name}
 let pendingCanvas = null;     // 命名待ちの切り出し結果
-let savedTemplates = {};      // { "テンプレ名": [{srcPoints, partName}, ...], ... }
-let appliedPolys = [];        // [{points, partName}] テンプレ適用中の複数ポリゴン
-const TEMPLATES_KEY = "partsCutterTemplates";
+
+// ===== v3: リグ整列レイアウト定義 =====
+// 主人公リグ(player.tscn)が前提とする、各パーツのキャンバスサイズと配置。
+// この定義に載っているパーツ名で保存すると、入力シートのレイアウトが何であれ、
+// 出力は常にこのキャンバス・この位置に整列される → Godotに上書きするだけでリグに乗る。
+// 数値は body.zip(正しい原器)から実測。パーツを手で直したら再実測して更新すること。
+const RIG_LAYOUT = {
+  "chara_head":        {cw:1024, ch:560, cx:130.5, cy:69.5,  pw:110, ph:124},
+  "chara_torso":       {cw:1024, ch:560, cx:118.5, cy:271.0, pw:180, ph:265},
+  "chara_hip":         {cw:1024, ch:560, cx:129.5, cy:468.0, pw:148, ph:109},
+  "chara_arm_upper_l": {cw:751,  ch:392, cx:357.5, cy:90.5,  pw:52,  ph:154},
+  "chara_arm_upper_r": {cw:819,  ch:448, cx:268.0, cy:102.5, pw:65,  ph:180},
+  "chara_arm_lower_l": {cw:751,  ch:392, cx:359.0, cy:243.0, pw:43,  ph:181},
+  "chara_arm_lower_r": {cw:819,  ch:448, cx:274.0, cy:315.5, pw:57,  ph:214},
+  "chara_leg_upper_l": {cw:819,  ch:560, cx:722.5, cy:145.0, pw:82,  ph:195},
+  "chara_leg_upper_r": {cw:819,  ch:560, cx:586.5, cy:145.0, pw:92,  ph:233},
+  "chara_leg_lower_l": {cw:1024, ch:560, cx:930.5, cy:417.5, pw:116, ph:236},
+  "chara_leg_lower_r": {cw:1024, ch:560, cx:746.0, cy:415.0, pw:141, ph:275},
+};
+
+// 切り出したパーツcanvasを、定義キャンバスの定義位置に整列して返す。
+// 中身の不透明範囲を検出し、定義bboxに縦横比保持でフィットさせて中央合わせ。
+function alignToRig(srcCanvas, key){
+  const L = RIG_LAYOUT[key];
+  if(!L) return null;
+  const sx = srcCanvas.getContext("2d");
+  const {width:sw, height:sh} = srcCanvas;
+  const data = sx.getImageData(0,0,sw,sh).data;
+  let x0=sw, y0=sh, x1=-1, y1=-1;
+  for(let y=0;y<sh;y++){ for(let x=0;x<sw;x++){
+    if(data[(y*sw+x)*4+3] > 20){
+      if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+    }
+  }}
+  if(x1<0) return null; // 空
+  const partW = x1-x0+1, partH = y1-y0+1;
+  const s = Math.min(L.pw/partW, L.ph/partH); // 定義サイズに収まる最大スケール
+  const rw = Math.max(1, Math.round(partW*s)), rh = Math.max(1, Math.round(partH*s));
+  const out = document.createElement("canvas");
+  out.width = L.cw; out.height = L.ch;
+  const ox = out.getContext("2d");
+  // 定義中心に、リサイズしたパーツ本体を中央合わせで配置
+  const dstX = Math.round(L.cx - rw/2), dstY = Math.round(L.cy - rh/2);
+  ox.imageSmoothingQuality = "high";
+  ox.drawImage(srcCanvas, x0, y0, partW, partH, dstX, dstY, rw, rh);
+  return out;
+}
 
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
@@ -281,14 +313,9 @@ let checker = null;
 
 // ===== キャンバスサイズ =====
 function resize(){
-  const oldW = cv.width/dpr, oldH = cv.height/dpr;
   const r = cv.getBoundingClientRect();
   cv.width = r.width * dpr; cv.height = r.height * dpr;
   checker = ctx.createPattern(patC, "repeat");
-  if(img && oldW > 0 && oldH > 0){
-    view.ox += (r.width - oldW)/2;
-    view.oy += (r.height - oldH)/2;
-  }
   draw();
 }
 window.addEventListener("resize", resize);
@@ -331,42 +358,18 @@ function draw(){
     });
     ctx.restore();
   }
-
-  // テンプレ適用ポリゴンのオーバーレイ(複数)
-  if(appliedPolys.length){
-    ctx.save();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#e6a339";
-    ctx.fillStyle = "rgba(230,163,57,0.10)";
-    appliedPolys.forEach(poly=>{
-      ctx.beginPath();
-      poly.points.forEach((p,i)=>{
-        const s = toScreen(p);
-        if(i===0) ctx.moveTo(s.x,s.y); else ctx.lineTo(s.x,s.y);
-      });
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    });
-    ctx.restore();
-  }
 }
 function toScreen(p){ return {x: p.x*view.scale + view.ox, y: p.y*view.scale + view.oy}; }
 function toImage(x,y){ return {x:(x-view.ox)/view.scale, y:(y-view.oy)/view.scale}; }
-function localPos(e){
-  const rect = cv.getBoundingClientRect();
-  return {x: e.clientX - rect.left, y: e.clientY - rect.top};
-}
 
 // ===== 画像読み込み =====
 document.getElementById("openBtn").onclick = ()=> document.getElementById("fileInput").click();
-function loadImageFromFile(f){
-  if(!f) return;
+document.getElementById("fileInput").onchange = (e)=>{
+  const f = e.target.files[0]; if(!f) return;
   const url = URL.createObjectURL(f);
   const im = new Image();
   im.onload = ()=>{
     img = im; points = [];
-    resize();
     // 画面にフィット
     const w = cv.width/dpr, h = cv.height/dpr;
     view.scale = Math.min(w/im.width, h/im.height) * 0.95;
@@ -377,21 +380,8 @@ function loadImageFromFile(f){
     draw();
   };
   im.src = url;
-}
-document.getElementById("fileInput").onchange = (e)=>{
-  const f = e.target.files[0]; if(!f) return;
-  loadImageFromFile(f);
   e.target.value = "";
 };
-document.getElementById("canvasWrap").addEventListener("dragover",(e)=>{
-  e.preventDefault();
-});
-document.getElementById("canvasWrap").addEventListener("drop",(e)=>{
-  e.preventDefault();
-  const f = e.dataTransfer.files[0];
-  if(!f || !f.type.startsWith("image/")) return;
-  loadImageFromFile(f);
-});
 
 // ===== モード切替 =====
 document.getElementById("modeSeg").addEventListener("click",(e)=>{
@@ -418,19 +408,15 @@ let dragPointIdx = -1;
 let panStart = null;
 let lassoOn = false;
 let downPos = null, moved = false;
-let polyDragPolyIdx = -1, polyDragPointIdx = -1; // appliedPolys側の頂点ドラッグ
-let tplMode = "individual"; // テンプレ微調整モード: "individual" | "whole"
-let wholeMoveStart = null;  // {x, y, polys} 全体移動ドラッグの開始情報
 
 cv.addEventListener("pointerdown",(e)=>{
   cv.setPointerCapture(e.pointerId);
-  const p0 = localPos(e);
-  active.set(e.pointerId, {x:p0.x, y:p0.y});
-  moved = false; downPos = {x:p0.x, y:p0.y};
+  active.set(e.pointerId, {x:e.offsetX, y:e.offsetY});
+  moved = false; downPos = {x:e.offsetX, y:e.offsetY};
 
   if(active.size === 2){
     // ピンチ開始(進行中の操作は中断)
-    lassoOn = false; dragPointIdx = -1; panStart = null; wholeMoveStart = null;
+    lassoOn = false; dragPointIdx = -1; panStart = null;
     const [a,b] = [...active.values()];
     pinchStart = {
       dist: Math.hypot(a.x-b.x, a.y-b.y),
@@ -442,38 +428,22 @@ cv.addEventListener("pointerdown",(e)=>{
   }
   if(!img) return;
 
-  if(appliedPolys.length && tplMode === "whole"){
-    wholeMoveStart = {
-      x: p0.x, y: p0.y,
-      polys: appliedPolys.map(poly=> poly.points.map(pt=>({x:pt.x, y:pt.y})))
-    };
-    return;
-  }
-
-  polyDragPolyIdx = -1; polyDragPointIdx = -1;
-  if(appliedPolys.length && tplMode === "individual"){
-    const hit = hitAppliedPoint(p0.x, p0.y);
-    if(hit){ polyDragPolyIdx = hit.polyIdx; polyDragPointIdx = hit.ptIdx; }
-  }
-  if(polyDragPolyIdx >= 0) return;
-
   if(mode === "move"){
-    panStart = {x:p0.x, y:p0.y, ox:view.ox, oy:view.oy};
+    panStart = {x:e.offsetX, y:e.offsetY, ox:view.ox, oy:view.oy};
   } else if(mode === "tap"){
     // 既存の点の近くならドラッグ開始
-    dragPointIdx = hitPoint(p0.x, p0.y);
+    dragPointIdx = hitPoint(e.offsetX, e.offsetY);
   } else if(mode === "lasso"){
     lassoOn = true;
-    points.push(toImage(p0.x, p0.y));
+    points.push(toImage(e.offsetX, e.offsetY));
     draw();
   }
 });
 
 cv.addEventListener("pointermove",(e)=>{
   if(!active.has(e.pointerId)) return;
-  const pm = localPos(e);
-  active.set(e.pointerId, {x:pm.x, y:pm.y});
-  if(downPos && Math.hypot(pm.x-downPos.x, pm.y-downPos.y) > 8) moved = true;
+  active.set(e.pointerId, {x:e.offsetX, y:e.offsetY});
+  if(downPos && Math.hypot(e.offsetX-downPos.x, e.offsetY-downPos.y) > 8) moved = true;
 
   if(active.size === 2 && pinchStart){
     const [a,b] = [...active.values()];
@@ -492,32 +462,16 @@ cv.addEventListener("pointermove",(e)=>{
   }
   if(!img) return;
 
-  if(wholeMoveStart){
-    const dxImg = (pm.x - wholeMoveStart.x) / view.scale;
-    const dyImg = (pm.y - wholeMoveStart.y) / view.scale;
-    appliedPolys.forEach((poly,i)=>{
-      poly.points = wholeMoveStart.polys[i].map(pt=>({x: pt.x+dxImg, y: pt.y+dyImg}));
-    });
-    draw();
-    return;
-  }
-
-  if(polyDragPolyIdx >= 0){
-    appliedPolys[polyDragPolyIdx].points[polyDragPointIdx] = toImage(pm.x, pm.y);
-    draw();
-    return;
-  }
-
   if(mode === "move" && panStart){
-    view.ox = panStart.ox + (pm.x - panStart.x);
-    view.oy = panStart.oy + (pm.y - panStart.y);
+    view.ox = panStart.ox + (e.offsetX - panStart.x);
+    view.oy = panStart.oy + (e.offsetY - panStart.y);
     draw();
   } else if(mode === "tap" && dragPointIdx >= 0){
-    points[dragPointIdx] = toImage(pm.x, pm.y);
+    points[dragPointIdx] = toImage(e.offsetX, e.offsetY);
     draw();
   } else if(mode === "lasso" && lassoOn){
     const last = points[points.length-1];
-    const cur = toImage(pm.x, pm.y);
+    const cur = toImage(e.offsetX, e.offsetY);
     const screenDist = Math.hypot((cur.x-last.x)*view.scale, (cur.y-last.y)*view.scale);
     if(screenDist > lassoGap){ points.push(cur); draw(); }
   }
@@ -528,13 +482,11 @@ function endPointer(e){
   active.delete(e.pointerId);
   if(wasSize === 2) pinchStart = null;
 
-  if(mode === "tap" && !moved && dragPointIdx < 0 && polyDragPolyIdx < 0 && img && wasSize === 1){
-    const pe = localPos(e);
-    points.push(toImage(pe.x, pe.y));
+  if(mode === "tap" && !moved && dragPointIdx < 0 && img && wasSize === 1){
+    points.push(toImage(e.offsetX, e.offsetY));
     draw();
   }
   dragPointIdx = -1; panStart = null; lassoOn = false; downPos = null;
-  polyDragPolyIdx = -1; polyDragPointIdx = -1; wholeMoveStart = null;
 }
 cv.addEventListener("pointerup", endPointer);
 cv.addEventListener("pointercancel", endPointer);
@@ -545,16 +497,6 @@ function hitPoint(sx, sy){
     if(Math.hypot(s.x-sx, s.y-sy) < 20) return i;
   }
   return -1;
-}
-function hitAppliedPoint(sx, sy){
-  for(let pi=appliedPolys.length-1; pi>=0; pi--){
-    const pts = appliedPolys[pi].points;
-    for(let i=pts.length-1; i>=0; i--){
-      const s = toScreen(pts[i]);
-      if(Math.hypot(s.x-sx, s.y-sy) < 20) return {polyIdx:pi, ptIdx:i};
-    }
-  }
-  return null;
 }
 
 // ===== 操作ボタン =====
@@ -691,13 +633,26 @@ function finishNaming(partName){
   let base = charPrefix() + "_" + partName;
   let name = base + ".png", i = 2;
   while(parts.some(p=>p.name===name)){ name = base + "_" + i + ".png"; i++; }
-  parts.push({canvas: pendingCanvas, name, srcPoints: points.slice(), partName});
+
+  // ===== v3: リグ整列 =====
+  // 「リグ整列」ONで、切り出したパーツ名がリグ定義にあれば、
+  // 定義キャンバス・定義位置に自動整列してから保存する。
+  let outCanvas = pendingCanvas;
+  let aligned = false;
+  const rigOn = document.getElementById("rigAlign") && document.getElementById("rigAlign").checked;
+  // charPrefixを外した純粋な部位名(chara_xxx)で定義を引く
+  const key = "chara_" + partName;
+  if(rigOn && RIG_LAYOUT[key]){
+    const a = alignToRig(pendingCanvas, key);
+    if(a){ outCanvas = a; aligned = true; }
+  }
+
+  parts.push({canvas: outCanvas, name, aligned});
   pendingCanvas = null;
   document.getElementById("modal").classList.remove("show");
   points = []; draw();
   renderParts();
-  resize();
-  toast(name + " を切り出しました");
+  toast(name + (aligned ? " をリグ整列で切り出しました" : " を切り出しました"));
 }
 
 // ===== パーツ一覧・保存 =====
@@ -723,7 +678,7 @@ function renderParts(){
     sv.onclick = ()=> savePart(p);
     const del = document.createElement("button");
     del.className = "btn small del"; del.textContent = "削除";
-    del.onclick = ()=>{ parts.splice(idx,1); renderParts(); resize(); };
+    del.onclick = ()=>{ parts.splice(idx,1); renderParts(); };
     row.append(im, nm, df, fl, sv, del);
     list.appendChild(row);
   });
@@ -765,163 +720,6 @@ document.getElementById("saveAllBtn").onclick = async ()=>{
   }
 };
 
-// ===== テンプレ: 永続化 =====
-function loadSavedTemplates(){
-  try{
-    const raw = localStorage.getItem(TEMPLATES_KEY);
-    savedTemplates = raw ? JSON.parse(raw) : {};
-  }catch(e){
-    savedTemplates = {};
-  }
-}
-function persistSavedTemplates(){
-  try{
-    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(savedTemplates));
-  }catch(e){
-    toast("保存できませんでした");
-  }
-}
-function renderTemplateSelect(){
-  const sel = document.getElementById("templateSelect");
-  const names = Object.keys(savedTemplates);
-  const prevValue = sel.value;
-  sel.innerHTML = "";
-  if(!names.length){
-    const opt = document.createElement("option");
-    opt.value = ""; opt.textContent = "(テンプレなし)";
-    sel.appendChild(opt);
-    return;
-  }
-  names.forEach(n=>{
-    const opt = document.createElement("option");
-    opt.value = n; opt.textContent = n;
-    sel.appendChild(opt);
-  });
-  if(names.includes(prevValue)) sel.value = prevValue;
-}
-
-// ===== テンプレ: 保存・適用・削除 =====
-document.getElementById("saveTemplateBtn").onclick = ()=>{
-  const arr = parts
-    .filter(p=>p.srcPoints)
-    .map(p=>({srcPoints: p.srcPoints, partName: p.partName}));
-  if(!arr.length){ toast("srcPointsを持つパーツがありません"); return; }
-  const name = prompt("テンプレ名を入力してください");
-  if(!name) return;
-  if(savedTemplates[name] && !confirm("「" + name + "」は既に存在します。上書きしますか?")) return;
-  savedTemplates[name] = arr;
-  persistSavedTemplates();
-  renderTemplateSelect();
-  document.getElementById("templateSelect").value = name;
-  toast("テンプレ保存: " + name + "(" + arr.length + "パーツ)");
-};
-
-document.getElementById("tplModeSeg").addEventListener("click",(e)=>{
-  const b = e.target.closest("button"); if(!b) return;
-  tplMode = b.dataset.tm;
-  document.querySelectorAll("#tplModeSeg button").forEach(x=>x.classList.toggle("on", x===b));
-});
-
-document.getElementById("applyTemplateBtn").onclick = ()=>{
-  if(!img){ toast("先に画像を開いてください"); return; }
-  const names = Object.keys(savedTemplates);
-  if(!names.length){ toast("テンプレが保存されていません"); return; }
-  let name = names.length === 1 ? names[0] : document.getElementById("templateSelect").value;
-  if(!name || !savedTemplates[name]){ toast("テンプレを選択してください"); return; }
-  const tpl = savedTemplates[name];
-  appliedPolys = tpl.map(t=>({points: t.srcPoints.slice(), partName: t.partName}));
-  document.getElementById("tplModeSeg").style.display = "flex";
-  resize();
-  toast("テンプレ適用: " + name + "(" + appliedPolys.length + "パーツ分)");
-};
-
-document.getElementById("deleteTemplateBtn").onclick = ()=>{
-  const name = document.getElementById("templateSelect").value;
-  if(!name || !savedTemplates[name]){ toast("削除するテンプレを選択してください"); return; }
-  if(!confirm("「" + name + "」を削除しますか?")) return;
-  delete savedTemplates[name];
-  persistSavedTemplates();
-  renderTemplateSelect();
-  resize();
-  toast("「" + name + "」を削除しました");
-};
-
-// ===== テンプレ: ファイル書き出し・読み込み =====
-document.getElementById("exportTemplatesBtn").onclick = ()=>{
-  if(!Object.keys(savedTemplates).length){ toast("テンプレがありません"); return; }
-  const blob = new Blob([JSON.stringify(savedTemplates)], {type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "templates.json";
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
-  toast("templates.json を書き出しました");
-};
-document.getElementById("importTemplatesBtn").onclick = ()=> document.getElementById("templateFileInput").click();
-document.getElementById("templateFileInput").onchange = (e)=>{
-  const f = e.target.files[0]; e.target.value = "";
-  if(!f) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    let incoming;
-    try{ incoming = JSON.parse(reader.result); }
-    catch(err){ toast("JSONの読み込みに失敗しました"); return; }
-    let count = 0;
-    for(const name in incoming){
-      if(savedTemplates[name] && !confirm("「" + name + "」は既に存在します。上書きしますか?")) continue;
-      savedTemplates[name] = incoming[name];
-      count++;
-    }
-    persistSavedTemplates();
-    renderTemplateSelect();
-    resize();
-    toast(count + "件のテンプレを読み込みました");
-  };
-  reader.readAsText(f);
-};
-
-document.getElementById("batchCutBtn").onclick = ()=>{
-  if(!img){ toast("先に画像を開いてください"); return; }
-  if(!appliedPolys.length){ toast("先にテンプレ適用してください"); return; }
-  if(!confirm("前のパーツを消して切り出します。保存済みですか?")) return;
-
-  parts = [];
-  const posKeep = document.getElementById("posKeep").checked;
-  const keyOn = document.getElementById("keyToggle").checked;
-
-  appliedPolys.forEach(poly=>{
-    const pts = poly.points;
-    if(pts.length < 3) return;
-    const xs = pts.map(p=>p.x), ys = pts.map(p=>p.y);
-    const minX = Math.max(0, Math.floor(Math.min(...xs)));
-    const minY = Math.max(0, Math.floor(Math.min(...ys)));
-    const maxX = Math.min(img.width,  Math.ceil(Math.max(...xs)));
-    const maxY = Math.min(img.height, Math.ceil(Math.max(...ys)));
-    const w = maxX-minX, h = maxY-minY;
-    if(w < 2 || h < 2) return;
-    const c = document.createElement("canvas");
-    if(posKeep){ c.width = img.width; c.height = img.height; }
-    else{ c.width = w; c.height = h; }
-    const cx = c.getContext("2d");
-    const dx = posKeep ? 0 : minX, dy = posKeep ? 0 : minY;
-    cx.beginPath();
-    pts.forEach((p,i)=>{ i ? cx.lineTo(p.x-dx, p.y-dy) : cx.moveTo(p.x-dx, p.y-dy); });
-    cx.closePath(); cx.clip();
-    cx.drawImage(img, -dx, -dy);
-    if(keyOn) applyMagentaKey(c);
-
-    const name = charPrefix() + "_" + poly.partName + ".png";
-    parts.push({canvas: c, name});
-  });
-
-  appliedPolys = [];
-  document.getElementById("tplModeSeg").style.display = "none";
-  renderParts();
-  resize();
-  toast("一括切り出し: " + parts.length + "パーツ");
-};
-
 // ===== 反転コピー(_l/_r自動入替) =====
 function flipName(name){
   let base = name.replace(/\.png$/,"");
@@ -941,7 +739,6 @@ function flipPart(p){
   while(parts.some(q=>q.name===name)){ name = base + "_" + i + ".png"; i++; }
   parts.push({canvas: c, name});
   renderParts();
-  resize();
   toast(name + " を作成しました");
 }
 
@@ -1060,7 +857,6 @@ document.getElementById("deformAdd").onclick = ()=>{
   const name = variantName(deformPart.part.name);
   parts.push({canvas:c, name});
   renderParts();
-  resize();
   toast(name + " を作成しました");
   document.getElementById("deformName").textContent = variantName(deformPart.part.name);
 };
@@ -1114,8 +910,6 @@ document.getElementById("promptCopy").onclick = async ()=>{
   }
 };
 
-loadSavedTemplates();
-renderTemplateSelect();
 resize();
 </script>
 </body>
